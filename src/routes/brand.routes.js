@@ -6,6 +6,7 @@ import {
   updateBrand,
   deleteBrand,
   deleteMultipleBrands,
+  bulkUpdateBrandStatus,
 } from "../controllers/brand.controller.js";
 import { createUploadMiddleware } from "../middlewares/upload.middleware.js";
 import authMiddleware from "../middlewares/auth.middleware.js";
@@ -29,6 +30,7 @@ router.use(authMiddleware);
 router.post("/", uploadBrandFiles, createBrands);
 router.put("/:id", uploadBrandFiles, updateBrand);
 router.delete("/:id", deleteBrand);
+router.post("/bulk-status", bulkUpdateBrandStatus); 
 router.post("/delete-multiple", deleteMultipleBrands);
 
 export default router;

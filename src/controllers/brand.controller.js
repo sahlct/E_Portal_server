@@ -148,3 +148,32 @@ export const deleteMultipleBrands = async (req, res, next) => {
     next(err);
   }
 };
+
+
+/* BULK STATUS UPDATE (activate or deactivate multiple brands) */
+export const bulkUpdateBrandStatus = async (req, res, next) => {
+  try {
+    const { ids, status } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0)
+      return res.status(400).json({ message: "ids array required" });
+
+    if (![0, 1].includes(Number(status)))
+      return res.status(400).json({ message: "Invalid status value" });
+
+    const result = await Brand.updateMany(
+      { _id: { $in: ids } },
+      { $set: { status: Number(status) } }
+    );
+
+    res.json({
+      message:
+        Number(status) === 1
+          ? "Selected brands activated successfully"
+          : "Selected brands deactivated successfully",
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
