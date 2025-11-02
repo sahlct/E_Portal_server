@@ -3,32 +3,53 @@ import morgan from "morgan";
 import helmet from "helmet";
 import cors from "cors";
 import path from "path";
+import dotenv from "dotenv";
 
 import authRoutes from "./routes/auth.routes.js";
 import errorHandler from "./middlewares/error.middleware.js";
-import productCategoryRoutes from "./routes/productCategory.routes.js"
+import productCategoryRoutes from "./routes/productCategory.routes.js";
 import productRoutes from "./routes/product.routes.js";
-import skuRoutes from "./routes/product_sku.routes.js"
+import skuRoutes from "./routes/product_sku.routes.js";
+import carouselRoutes from "./routes/carousel.routes.js";
+import brandRoutes from "./routes/brand.routes.js";
 
 const app = express();
+dotenv.config();
 
+// Static uploads
 const uploadsPath = path.join(process.cwd(), "uploads");
 app.use("/uploads", express.static(uploadsPath));
 
-// Middlewares
+// Security middlewares
 app.use(helmet());
-app.use(cors());
+
+// ✅ Allow all origins, methods, and headers
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
+// JSON parser
 app.use(express.json());
-if (process.env.NODE_ENV === "development") app.use(morgan("dev"));
+
+// Logger
+if (process.env.NODE_ENV === "development") {
+  app.use(morgan("dev"));
+}
 
 // Routes
 app.get("/health", (req, res) => res.json({ ok: true }));
 app.use("/api/auth", authRoutes);
 app.use("/api/categories", productCategoryRoutes);
 app.use("/api/products", productRoutes);
-app.use("/api/product-sku", skuRoutes)
+app.use("/api/product-sku", skuRoutes);
+app.use("/api/carousel", carouselRoutes);
+app.use("/api/brands", brandRoutes);
 
-// Error handling
+// Error handler
 app.use(errorHandler);
 
 export default app;

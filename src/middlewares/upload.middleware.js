@@ -10,22 +10,22 @@ const __dirname = path.dirname(__filename);
 /**
  * createUploadMiddleware(options)
  * options: {
- *  fieldName: 'category_image',
- *  folderName: 'category',
- *  maxSize: number (bytes),
- *  allowedMime: [ ... ]
+ *  fieldName?: string,
+ *  fields?: [ { name: string, maxCount?: number } ],
+ *  folderName?: string,
+ *  maxSize?: number,
+ *  allowedMime?: string[],
  * }
  */
 export function createUploadMiddleware({
-  fieldName = "category_image",
-  folderName = "category",
+  fieldName = "file",
+  fields = null,
+  folderName = "uploads",
   maxSize = 5 * 1024 * 1024, // 5 MB default
   allowedMime = ["image/jpeg", "image/png", "image/webp", "image/gif"],
 } = {}) {
   const uploadsRoot = path.resolve(process.cwd(), "uploads");
   const destFolder = path.join(uploadsRoot, folderName);
-
-  // ensure upload folder exists
   fs.mkdirSync(destFolder, { recursive: true });
 
   const storage = multer.diskStorage({
@@ -33,11 +33,9 @@ export function createUploadMiddleware({
       cb(null, destFolder);
     },
     filename: function (req, file, cb) {
-      // random name: timestamp-randhex.ext
       const ext = path.extname(file.originalname).toLowerCase();
       const rand = crypto.randomBytes(6).toString("hex");
-      const filename = `${Date.now()}-${rand}${ext}`;
-      cb(null, filename);
+      cb(null, `${Date.now()}-${rand}${ext}`);
     },
   });
 
@@ -52,24 +50,26 @@ export function createUploadMiddleware({
     fileFilter,
   });
 
-  // return middleware that handles single file upload (fieldName)
+  // ✅ If multiple fields provided, handle multi-field upload
+  if (Array.isArray(fields) && fields.length > 0) {
+    return upload.fields(fields);
+  }
+
+  // ✅ Default to single upload
   return upload.single(fieldName);
 }
 
 /**
- * Delete file helper - path relative to project root: uploads/<folder>/<filename>
+ * Delete file helper
  */
 export function deleteUploadedFile(relativeFilePath) {
   if (!relativeFilePath) return;
   try {
-    // relativeFilePath might be a URL: SERVER_URL/uploads/category/filename.ext
-    // extract path after '/uploads'
     const idx = relativeFilePath.indexOf("/uploads/");
     let localPath;
     if (idx !== -1) {
-      localPath = relativeFilePath.substring(idx + 1); // remove leading slash
+      localPath = relativeFilePath.substring(idx + 1);
     } else {
-      // maybe they passed just 'uploads/category/filename'
       localPath = relativeFilePath;
     }
     const fullPath = path.resolve(process.cwd(), localPath);
@@ -77,7 +77,6 @@ export function deleteUploadedFile(relativeFilePath) {
       fs.unlinkSync(fullPath);
     }
   } catch (err) {
-    // ignore errors for now; controller logs on failure if needed
     console.error("Failed to delete file:", err.message);
   }
 }
