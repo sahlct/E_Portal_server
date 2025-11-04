@@ -12,6 +12,7 @@ import productRoutes from "./routes/product.routes.js";
 import skuRoutes from "./routes/product_sku.routes.js";
 import carouselRoutes from "./routes/carousel.routes.js";
 import brandRoutes from "./routes/brand.routes.js";
+import blogsRoutes from "./routes/blog.routes.js";
 
 const app = express();
 dotenv.config();
@@ -48,6 +49,7 @@ app.use("/api/products", productRoutes);
 app.use("/api/product-sku", skuRoutes);
 app.use("/api/carousel", carouselRoutes);
 app.use("/api/brands", brandRoutes);
+app.use("/api/blogs", blogsRoutes)
 
 // Error handler
 app.use(errorHandler);
