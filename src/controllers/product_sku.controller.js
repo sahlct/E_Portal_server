@@ -5,6 +5,8 @@ import ProductVariation from "../models/product_variation.model.js";
 import ProductVariationOption from "../models/product_variation_options.model.js";
 import ProductVariationConfiguration from "../models/product_varition_conf.model.js";
 import deleteFile from "../utils/deleteFile.js";
+import fs from "fs";
+import path from "path";
 
 const buildFileUrl = (filename, folder = "sku") => {
   if (!filename) return null;
@@ -12,11 +14,18 @@ const buildFileUrl = (filename, folder = "sku") => {
   return `${serverUrl.replace(/\/$/, "")}/uploads/${folder}/${filename}`;
 };
 
+// sku create with variation
 export const createProductSkuWithVariation = async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
+    // ✅ Ensure upload directory exists (fix for ENOENT error)
+    const uploadPath = path.join("uploads", "sku");
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+
     const {
       product_id,
       sku,
@@ -31,12 +40,11 @@ export const createProductSkuWithVariation = async (req, res, next) => {
       status,
     } = req.body;
 
-    // -----------------------------------------------------
-    // 🔹 Step 1: Parse variation_option_ids safely
-    // -----------------------------------------------------
+    // ----------------------------------------
+    // 🔹 Step 1: Handle variation_option_ids
+    // ----------------------------------------
     let variationOptionIds = [];
 
-    // Handle form-data fields like sku_variation_conf[0][variation_option_id]
     for (const key of Object.keys(req.body)) {
       const match = key.match(/^sku_variation_conf\[\d+\]\[variation_option_id\]$/);
       if (match) {
@@ -45,7 +53,6 @@ export const createProductSkuWithVariation = async (req, res, next) => {
       }
     }
 
-    // Handle if sku_variation_conf is sent as an array, string, or JSON
     if (Array.isArray(req.body.sku_variation_conf)) {
       variationOptionIds.push(...req.body.sku_variation_conf);
     } else if (typeof req.body.sku_variation_conf === "string") {
@@ -54,9 +61,7 @@ export const createProductSkuWithVariation = async (req, res, next) => {
         if (Array.isArray(parsed)) variationOptionIds.push(...parsed);
       } catch {
         if (req.body.sku_variation_conf.includes(",")) {
-          variationOptionIds.push(
-            ...req.body.sku_variation_conf.split(",").map((v) => v.trim())
-          );
+          variationOptionIds.push(...req.body.sku_variation_conf.split(",").map((v) => v.trim()));
         } else if (req.body.sku_variation_conf.trim()) {
           variationOptionIds.push(req.body.sku_variation_conf.trim());
         }
@@ -68,58 +73,41 @@ export const createProductSkuWithVariation = async (req, res, next) => {
       variationOptionIds.push(...req.body.sku_variation_conf.variation_option_id);
     }
 
-    // Clean up duplicates and empty strings
-    variationOptionIds = [
-      ...new Set(variationOptionIds.filter((v) => v && v.length > 10)),
-    ];
+    variationOptionIds = [...new Set(variationOptionIds.filter((v) => v && v.length > 10))];
 
-    // -----------------------------------------------------
-    // 🔹 Step 2: Basic validation
-    // -----------------------------------------------------
+    // ----------------------------------------
+    // 🔹 Step 2: Validation
+    // ----------------------------------------
     if (!product_id || !sku || !product_sku_name) {
-      if (req.file) deleteFile(req.file?.path || req.file?.filename);
-      return res
-        .status(400)
-        .json({ message: "product_id, sku, and product_sku_name are required" });
+      return res.status(400).json({ message: "product_id, sku, and product_sku_name are required" });
     }
 
     if (!mongoose.Types.ObjectId.isValid(product_id)) {
-      if (req.file) deleteFile(req.file?.path || req.file?.filename);
       return res.status(400).json({ message: "Invalid product_id format" });
     }
 
     const productExists = await Product.findById(product_id).session(session);
     if (!productExists) {
-      if (req.file) deleteFile(req.file?.path || req.file?.filename);
       return res.status(400).json({ message: "Product not found" });
     }
 
-    const existingSKU = await ProductSku.findOne({ sku }).session(session);
+    const existingSKU = await ProductSku.findOne({ sku, product_id }).session(session);
     if (existingSKU) {
-      if (req.file) deleteFile(req.file?.path || req.file?.filename);
       return res.status(400).json({ message: "SKU already exists" });
     }
 
     if (variationOptionIds.length === 0) {
-      if (req.file) deleteFile(req.file?.path || req.file?.filename);
-      return res
-        .status(400)
-        .json({ message: "At least one variation_option_id is required" });
+      return res.status(400).json({ message: "At least one variation_option_id is required" });
     }
 
-    // -----------------------------------------------------
-    // 🔹 Step 3: Validate all variation option IDs
-    // -----------------------------------------------------
-    const validVariationIds = variationOptionIds.filter((id) =>
-      mongoose.Types.ObjectId.isValid(id)
-    );
+    // ----------------------------------------
+    // 🔹 Step 3: Validate variation options
+    // ----------------------------------------
+    const validVariationIds = variationOptionIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
     if (validVariationIds.length !== variationOptionIds.length) {
       throw new Error("One or more variation_option_id values are invalid");
     }
 
-    // -----------------------------------------------------
-    // 🔹 Step 4: Fetch and validate variation options
-    // -----------------------------------------------------
     const variationConfigs = await Promise.all(
       validVariationIds.map(async (id) => {
         const option = await ProductVariationOption.findById(id)
@@ -136,9 +124,7 @@ export const createProductSkuWithVariation = async (req, res, next) => {
           !option.product_variation_id.product_id ||
           String(option.product_variation_id.product_id._id) !== String(product_id)
         ) {
-          throw new Error(
-            `Variation option ${id} does not belong to product ${product_id}`
-          );
+          throw new Error(`Variation option ${id} does not belong to product ${product_id}`);
         }
 
         return {
@@ -149,16 +135,15 @@ export const createProductSkuWithVariation = async (req, res, next) => {
       })
     );
 
-    // Ensure each variation belongs to a unique variation (e.g., size, color)
     const variationIds = variationConfigs.map((vc) => String(vc.product_variation_id));
     const uniqueVarIds = [...new Set(variationIds)];
     if (variationIds.length !== uniqueVarIds.length) {
       throw new Error("Each variation option must belong to a different variation type");
     }
 
-    // -----------------------------------------------------
-    // 🔹 Step 5: Check duplicate SKU configuration
-    // -----------------------------------------------------
+    // ----------------------------------------
+    // 🔹 Step 4: Duplicate check
+    // ----------------------------------------
     const duplicateCheck = await ProductVariationConfiguration.aggregate([
       {
         $match: {
@@ -187,15 +172,24 @@ export const createProductSkuWithVariation = async (req, res, next) => {
       throw new Error("SKU with the same variation configuration already exists");
     }
 
-    // -----------------------------------------------------
-    // 🔹 Step 6: Handle image file
-    // -----------------------------------------------------
-    let fileUrl = null;
-    if (req.file) fileUrl = buildFileUrl(req.file.filename, "sku");
+    // ----------------------------------------
+    // 🔹 Step 5: Handle images
+    // ----------------------------------------
+    const thumbnailFile = req.files?.thumbnail_image?.[0];
+    const skuImages = req.files?.sku_image || [];
 
-    // -----------------------------------------------------
-    // 🔹 Step 7: Create Product SKU
-    // -----------------------------------------------------
+    // ✅ Check at least one sku_image
+    if (!skuImages.length) {
+      if (thumbnailFile) deleteFile(thumbnailFile.path || thumbnailFile.filename);
+      return res.status(400).json({ message: "At least one sku_image is required" });
+    }
+
+    const thumbnailUrl = thumbnailFile ? buildFileUrl(thumbnailFile.filename, "sku") : null;
+    const skuImageUrls = skuImages.map((file) => buildFileUrl(file.filename, "sku"));
+
+    // ----------------------------------------
+    // 🔹 Step 6: Create SKU
+    // ----------------------------------------
     const skuDoc = await ProductSku.create(
       [
         {
@@ -203,7 +197,8 @@ export const createProductSkuWithVariation = async (req, res, next) => {
           sku,
           product_sku_name,
           description,
-          thumbnail_image: fileUrl,
+          thumbnail_image: thumbnailUrl,
+          sku_image: skuImageUrls, // ✅ Save all uploaded images
           mrp: mrp || 0,
           price: price || 0,
           quantity: quantity || 0,
@@ -218,9 +213,9 @@ export const createProductSkuWithVariation = async (req, res, next) => {
 
     const skuId = skuDoc[0]._id;
 
-    // -----------------------------------------------------
-    // 🔹 Step 8: Create Variation Configuration entries
-    // -----------------------------------------------------
+    // ----------------------------------------
+    // 🔹 Step 7: Save variation configurations
+    // ----------------------------------------
     const confDocs = await ProductVariationConfiguration.insertMany(
       variationConfigs.map((vc) => ({
         ...vc,
@@ -238,6 +233,8 @@ export const createProductSkuWithVariation = async (req, res, next) => {
       data: {
         sku_id: skuId,
         sku_name: product_sku_name,
+        thumbnail_image: thumbnailUrl,
+        sku_images: skuImageUrls,
         variation_configurations: confDocs.map((c) => ({
           id: c._id,
           variation_id: c.product_variation_id,
@@ -248,13 +245,235 @@ export const createProductSkuWithVariation = async (req, res, next) => {
   } catch (error) {
     await session.abortTransaction();
     session.endSession();
-    if (req.file) deleteFile(req.file?.path || req.file?.filename);
+
+    // Clean up uploaded files on failure
+    if (req.files) {
+      if (req.files.thumbnail_image?.[0]) deleteFile(req.files.thumbnail_image[0].path);
+      if (req.files.sku_image?.length) {
+        req.files.sku_image.forEach((file) => deleteFile(file.path));
+      }
+    }
+
     console.error("❌ Error creating SKU with variation:", error);
     return res.status(500).json({ message: error.message });
   }
 };
 
+// update with variation
+export const updateProductSkuWithVariation = async (req, res, next) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
+  try {
+    const skuId = req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(skuId)) {
+      return res.status(400).json({ message: "Invalid SKU ID format" });
+    }
+
+    const existingSku = await ProductSku.findById(skuId).session(session);
+    if (!existingSku) {
+      return res.status(404).json({ message: "SKU not found" });
+    }
+
+    const {
+      product_id,
+      sku,
+      product_sku_name,
+      description,
+      mrp,
+      price,
+      quantity,
+      is_new,
+      single_order_limit,
+      is_out_of_stock,
+      status,
+    } = req.body;
+
+    // -----------------------------------------------------
+    // 🔹 Step 1: Collect variation_option_ids safely
+    // -----------------------------------------------------
+    let variationOptionIds = [];
+
+    for (const key of Object.keys(req.body)) {
+      const match = key.match(/^sku_variation_conf\[\d+\]\[variation_option_id\]$/);
+      if (match) {
+        const val = req.body[key];
+        if (val && typeof val === "string" && val.trim()) variationOptionIds.push(val.trim());
+      }
+    }
+
+    if (Array.isArray(req.body.sku_variation_conf)) {
+      variationOptionIds.push(...req.body.sku_variation_conf);
+    } else if (typeof req.body.sku_variation_conf === "string") {
+      try {
+        const parsed = JSON.parse(req.body.sku_variation_conf);
+        if (Array.isArray(parsed)) variationOptionIds.push(...parsed);
+      } catch {
+        if (req.body.sku_variation_conf.includes(",")) {
+          variationOptionIds.push(...req.body.sku_variation_conf.split(",").map((v) => v.trim()));
+        } else if (req.body.sku_variation_conf.trim()) {
+          variationOptionIds.push(req.body.sku_variation_conf.trim());
+        }
+      }
+    }
+
+    variationOptionIds = [...new Set(variationOptionIds.filter((v) => v && v.length > 10))];
+
+    // -----------------------------------------------------
+    // 🔹 Step 2: Validation
+    // -----------------------------------------------------
+    if (!product_id || !sku || !product_sku_name) {
+      return res
+        .status(400)
+        .json({ message: "product_id, sku, and product_sku_name are required" });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(product_id)) {
+      return res.status(400).json({ message: "Invalid product_id format" });
+    }
+
+    const productExists = await Product.findById(product_id).session(session);
+    if (!productExists) {
+      return res.status(400).json({ message: "Product not found" });
+    }
+
+    if (variationOptionIds.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "At least one variation_option_id is required" });
+    }
+
+    // -----------------------------------------------------
+    // 🔹 Step 3: Validate variation options
+    // -----------------------------------------------------
+    const variationConfigs = await Promise.all(
+      variationOptionIds.map(async (id) => {
+        const option = await ProductVariationOption.findById(id)
+          .populate({
+            path: "product_variation_id",
+            populate: { path: "product_id" },
+          })
+          .session(session);
+
+        if (!option) throw new Error(`Invalid variation_option_id: ${id}`);
+
+        if (
+          !option.product_variation_id ||
+          !option.product_variation_id.product_id ||
+          String(option.product_variation_id.product_id._id) !== String(product_id)
+        ) {
+          throw new Error(
+            `Variation option ${id} does not belong to product ${product_id}`
+          );
+        }
+
+        return {
+          product_id,
+          product_variation_option_id: option._id,
+          product_variation_id: option.product_variation_id._id,
+        };
+      })
+    );
+
+    // -----------------------------------------------------
+    // 🔹 Step 4: Handle images (thumbnail + sku_image)
+    // -----------------------------------------------------
+    const thumbnailFile = req.files?.thumbnail_image?.[0];
+    const newSkuImages = req.files?.sku_image || [];
+
+    // ✅ Handle thumbnail update
+    if (thumbnailFile) {
+      if (existingSku.thumbnail_image) {
+        deleteFile(existingSku.thumbnail_image); // ✅ updated (pass full URL directly)
+      }
+      existingSku.thumbnail_image = buildFileUrl(thumbnailFile.filename, "sku");
+    }
+
+    // ✅ Handle sku_image update
+    if (newSkuImages.length > 0) {
+      // Delete old sku images
+      if (existingSku.sku_image?.length) {
+        existingSku.sku_image.forEach((img) => {
+          deleteFile(img); // ✅ updated (pass full URL directly)
+        });
+      }
+      existingSku.sku_image = newSkuImages.map((file) => buildFileUrl(file.filename, "sku"));
+    }
+
+    // ✅ Ensure at least one sku_image exists
+    if (!existingSku.sku_image || existingSku.sku_image.length === 0) {
+      return res.status(400).json({ message: "At least one sku_image is required" });
+    }
+
+    // -----------------------------------------------------
+    // 🔹 Step 5: Update SKU info
+    // -----------------------------------------------------
+    Object.assign(existingSku, {
+      product_id,
+      sku,
+      product_sku_name,
+      description,
+      mrp,
+      price,
+      quantity,
+      is_new: is_new === "true" || is_new === true,
+      single_order_limit: single_order_limit || 0,
+      is_out_of_stock: is_out_of_stock === "true" || is_out_of_stock === true,
+      status: status ? Number(status) : existingSku.status,
+    });
+
+    await existingSku.save({ session });
+
+    // -----------------------------------------------------
+    // 🔹 Step 6: Replace variation configurations
+    // -----------------------------------------------------
+    await ProductVariationConfiguration.deleteMany({
+      product_sku_id: existingSku._id,
+    }).session(session);
+
+    const confDocs = await ProductVariationConfiguration.insertMany(
+      variationConfigs.map((vc) => ({
+        ...vc,
+        product_sku_id: existingSku._id,
+        status: 1,
+      })),
+      { session }
+    );
+
+    await session.commitTransaction();
+    session.endSession();
+
+    return res.status(200).json({
+      message: "✅ Product SKU with variations updated successfully",
+      data: {
+        sku_id: existingSku._id,
+        sku_name: existingSku.product_sku_name,
+        thumbnail_image: existingSku.thumbnail_image,
+        sku_images: existingSku.sku_image,
+        variation_configurations: confDocs.map((c) => ({
+          id: c._id,
+          variation_id: c.product_variation_id,
+          variation_option_id: c.product_variation_option_id,
+        })),
+      },
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+
+    // Cleanup on error
+    if (req.files) {
+      if (req.files.thumbnail_image?.[0])
+        deleteFile(req.files.thumbnail_image[0].path);
+      if (req.files.sku_image?.length)
+        req.files.sku_image.forEach((file) => deleteFile(file.path));
+    }
+
+    console.error("❌ Error updating SKU with variation:", error);
+    return res.status(500).json({ message: error.message });
+  }
+};
 
 // Create new Product SKU
 export const createProductSku = async (req, res) => {
@@ -356,10 +575,58 @@ export const getAllProductSkus = async (req, res) => {
 // Get single Product SKU
 export const getSingleProductSku = async (req, res) => {
   try {
-    const sku = await ProductSku.findById(req.params.id).populate("product_id", "product_name");
-    if (!sku) return res.status(404).json({ message: "Product SKU not found" });
-    res.status(200).json(sku);
+    const skuId = req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(skuId)) {
+      return res.status(400).json({ message: "Invalid SKU ID format" });
+    }
+
+    // Step 1️⃣ — Get SKU base details
+    const sku = await ProductSku.findById(skuId)
+      .populate("product_id", "product_name")
+      .lean();
+
+    if (!sku) {
+      return res.status(404).json({ message: "Product SKU not found" });
+    }
+
+    // Step 2️⃣ — Get variation configuration details
+    const variationConfigs = await ProductVariationConfiguration.find({
+      product_sku_id: skuId,
+    })
+      .populate({
+        path: "product_variation_id",
+        select: "name", // Variation (e.g., Color, Size)
+      })
+      .populate({
+        path: "product_variation_option_id",
+        select: "name", // Option (e.g., Silver, 16inch)
+      })
+      .lean();
+
+    // Step 3️⃣ — Format clean response
+    const formattedConfigs = variationConfigs.map((conf) => ({
+      variation: {
+        _id: conf.product_variation_id?._id,
+        name: conf.product_variation_id?.name || null,
+      },
+      option: {
+        _id: conf.product_variation_option_id?._id,
+        name: conf.product_variation_option_id?.name || null,
+      },
+    }));
+
+    // Step 4️⃣ — Combine and send
+    res.status(200).json({
+      success: true,
+      message: "Product SKU fetched successfully",
+      data: {
+        ...sku,
+        variation_configurations: formattedConfigs,
+      },
+    });
   } catch (error) {
+    console.error("❌ Error fetching SKU:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
@@ -405,13 +672,38 @@ export const deleteProductSku = async (req, res) => {
     const sku = await ProductSku.findById(req.params.id);
     if (!sku) return res.status(404).json({ message: "Product SKU not found" });
 
+    // ----------------------------------------
+    // 🔹 Step 1: Delete thumbnail image (if exists)
+    // ----------------------------------------
     if (sku.thumbnail_image) {
-      await deleteFile(sku.thumbnail_image);
+      deleteFile(sku.thumbnail_image); // ✅ pass full URL directly
     }
 
+    // ----------------------------------------
+    // 🔹 Step 2: Delete all SKU images (if exist)
+    // ----------------------------------------
+    if (Array.isArray(sku.sku_image) && sku.sku_image.length > 0) {
+      sku.sku_image.forEach((imageUrl) => {
+        deleteFile(imageUrl); // ✅ pass full URL directly
+      });
+    }
+
+    // ----------------------------------------
+    // 🔹 Step 3: Delete related variation configurations
+    // ----------------------------------------
+    await ProductVariationConfiguration.deleteMany({
+      product_sku_id: sku._id,
+    });
+
+    // ----------------------------------------
+    // 🔹 Step 4: Delete SKU document
+    // ----------------------------------------
     await sku.deleteOne();
-    res.status(200).json({ message: "Product SKU deleted successfully" });
+
+    return res.status(200).json({ message: "✅ Product SKU deleted successfully" });
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    console.error("❌ Error deleting product SKU:", error);
+    return res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+

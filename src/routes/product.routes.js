@@ -18,7 +18,14 @@ router.post(
   uploadProductImage,
   controller.createProductWithVariations
 );
+router.put(
+  "/with-variation/:id",
+  uploadProductImage,
+  controller.updateProductWithVariations
+);
 
+
+// basic routes
 router.post("/", uploadProductImage, controller.createProduct);
 router.get("/", controller.listProducts);
 router.get("/:id", controller.getProduct);
