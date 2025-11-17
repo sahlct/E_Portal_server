@@ -11,11 +11,14 @@ const uploadCategoryImage = createUploadMiddleware({
   maxSize: 5 * 1024 * 1024, 
 });
 
+
+router.get("/", controller.listCategories);
+router.get("/:id", controller.getCategory);
+
+
 router.use(authMiddleware);
 
 router.post("/", uploadCategoryImage, controller.createCategory);
-router.get("/", controller.listCategories);
-router.get("/:id", controller.getCategory);
 router.put("/:id", uploadCategoryImage, controller.updateCategory);
 router.delete("/:id", controller.deleteCategory);
 

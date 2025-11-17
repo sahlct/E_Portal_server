@@ -2,6 +2,7 @@ import { Router } from "express";
 import * as controller from "../controllers/product.controller.js";
 import authMiddleware from "../middlewares/auth.middleware.js";
 import { createUploadMiddleware } from "../middlewares/upload.middleware.js";
+import { getVariationsByProductId } from "../controllers/product_sku.controller.js";
 
 const router = Router();
 
@@ -10,6 +11,10 @@ const uploadProductImage = createUploadMiddleware({
   folderName: "product",
   maxSize: 6 * 1024 * 1024,
 });
+
+router.get("/", controller.listProducts);
+router.get("/:id", controller.getProduct);
+router.get("/get-variations/:id", getVariationsByProductId);
 
 router.use(authMiddleware);
 
@@ -27,8 +32,6 @@ router.put(
 
 // basic routes
 router.post("/", uploadProductImage, controller.createProduct);
-router.get("/", controller.listProducts);
-router.get("/:id", controller.getProduct);
 router.put("/:id", uploadProductImage, controller.updateProduct);
 router.delete("/:id", controller.deleteProduct);
 

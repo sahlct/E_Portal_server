@@ -7,6 +7,8 @@ import {
   deleteProductSku,
   createProductSkuWithVariation,
   updateProductSkuWithVariation,
+  updateMultipleSkuIsNew,
+  getVariationsByProductId,
 } from "../controllers/product_sku.controller.js";
 import verifyToken from "../middlewares/auth.middleware.js";
 import { createUploadMiddleware } from "../middlewares/upload.middleware.js";
@@ -29,12 +31,14 @@ const uploadSkuFiles = createUploadMiddleware({
 const router = express.Router();
 
 router.post("/", verifyToken, uploadProductImage, createProductSku);
-router.get("/", verifyToken, getAllProductSkus);
-router.get("/:id", verifyToken, getSingleProductSku);
+router.get("/", getAllProductSkus);
+router.put("/singleEdit/is-new", verifyToken, updateMultipleSkuIsNew);
+router.get("/:id", getSingleProductSku);
 router.put("/:id", verifyToken, uploadProductImage, updateProductSku);
 
 router.post("/with-variation", verifyToken, uploadSkuFiles, createProductSkuWithVariation);
 router.put("/with-variation/:id", verifyToken, uploadSkuFiles, updateProductSkuWithVariation);
 router.delete("/:id", verifyToken, deleteProductSku);
+
 
 export default router;

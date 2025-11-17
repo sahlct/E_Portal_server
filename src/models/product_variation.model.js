@@ -6,7 +6,6 @@ const productVariationSchema = new mongoose.Schema(
       type: String,
       required: [true, "Variation name is required"],
       trim: true,
-      unique: true,
     },
     product_id: {
       type: mongoose.Schema.Types.ObjectId,
