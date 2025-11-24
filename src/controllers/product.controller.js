@@ -195,9 +195,23 @@ export const updateProductWithVariations = async (req, res, next) => {
 
     await existingProduct.save({ session });
 
-    // ✅ Handle Variations Update Logic
-    if (Array.isArray(variations)) {
-      // Delete all related old variation data
+    // ---------------- VARIATIONS UPDATE LOGIC ----------------
+    // variations === undefined   -> do nothing (keep existing)
+    // variations === null        -> delete all variations/options/configs
+    // variations is [] or array  -> delete all, then recreate (if non-empty)
+    if (variations === null) {
+      // ❌ remove all variations when client explicitly sends null
+      await Promise.all([
+        ProductVariation.deleteMany({ product_id: productId }).session(session),
+        ProductVariationOption.deleteMany({ product_id: productId }).session(
+          session
+        ),
+        ProductVariationConfiguration.deleteMany({
+          product_id: productId,
+        }).session(session),
+      ]);
+    } else if (Array.isArray(variations)) {
+      // Always clear old data first
       await Promise.all([
         ProductVariation.deleteMany({ product_id: productId }).session(session),
         ProductVariationOption.deleteMany({ product_id: productId }).session(
@@ -208,43 +222,47 @@ export const updateProductWithVariations = async (req, res, next) => {
         }).session(session),
       ]);
 
-      // Recreate variations & options
-      for (const v of variations) {
-        if (
-          !v.variation_name ||
-          !Array.isArray(v.options) ||
-          v.options.length === 0
-        )
-          throw new Error("Each variation must have a name and options array");
+      // If empty array, just delete and don't recreate
+      if (variations.length > 0) {
+        for (const v of variations) {
+          if (
+            !v.variation_name ||
+            !Array.isArray(v.options) ||
+            v.options.length === 0
+          ) {
+            throw new Error("Each variation must have a name and options array");
+          }
 
-        const variation = await ProductVariation.create(
-          [
-            {
-              name: v.variation_name.trim(),
-              product_id: productId,
-              status: 1,
-            },
-          ],
-          { session }
-        );
-
-        for (const optName of v.options) {
-          if (!optName || !String(optName).trim()) continue;
-
-          await ProductVariationOption.create(
+          const variation = await ProductVariation.create(
             [
               {
-                name: optName.trim(),
+                name: v.variation_name.trim(),
                 product_id: productId,
-                product_variation_id: variation[0]._id,
                 status: 1,
               },
             ],
             { session }
           );
+
+          for (const optName of v.options) {
+            if (!optName || !String(optName).trim()) continue;
+
+            await ProductVariationOption.create(
+              [
+                {
+                  name: optName.trim(),
+                  product_id: productId,
+                  product_variation_id: variation[0]._id,
+                  status: 1,
+                },
+              ],
+              { session }
+            );
+          }
         }
       }
     }
+    // ----------------------------------------------------------
 
     await session.commitTransaction();
     session.endSession();
@@ -345,59 +363,75 @@ export const listProducts = async (req, res, next) => {
     const category_id = req.query.category_id?.trim();
 
     const filter = {};
+
     if (search)
       filter.product_name = { $regex: escapeRegExp(search), $options: "i" };
+
     if (typeof status !== "undefined") {
       const s = Number(status);
       if (![0, 1].includes(s))
-        return res
-          .status(400)
-          .json({ message: "status filter must be 0 or 1" });
+        return res.status(400).json({ message: "status filter must be 0 or 1" });
       filter.status = s;
     }
-    if (category_id) {
-      // validate ObjectId format before using (optional)
-      filter.category_id = category_id;
-    }
+
+    if (category_id) filter.category_id = category_id;
 
     const skip = (page - 1) * limit;
 
     const [total, items] = await Promise.all([
       Product.countDocuments(filter),
+
       Product.find(filter)
         .sort({ created_at: -1 })
         .skip(skip)
         .limit(limit)
+        .populate({
+          path: "category_id",
+          select: "category_name",
+        })
         .lean(),
     ]);
 
+    const formattedItems = items.map((item) => ({
+      ...item,
+      category_name: item.category_id?.category_name || null,
+      category_id: item.category_id?._id || item.category_id,
+    }));
+
     res.json({
       meta: { total, page, limit, pages: Math.ceil(total / limit) || 1 },
-      data: items,
+      data: formattedItems,
     });
   } catch (err) {
     next(err);
   }
 };
 
+
 // get single
 export const getProduct = async (req, res, next) => {
   try {
     const productId = req.params.id;
 
-    // Find product by ID
-    const product = await Product.findById(productId).lean();
+    // Find product + populate category name
+    const product = await Product.findById(productId)
+      .populate({
+        path: "category_id",
+        select: "category_name",
+      })
+      .lean();
+
     if (!product)
       return res.status(404).json({ message: "Product not found" });
 
-    // Fetch all variations for this product
+    // Fetch variations
     const variations = await ProductVariation.find({
       product_id: productId,
     })
       .sort({ createdAt: 1 })
       .lean();
 
-    // For each variation, fetch its options
+    // Fetch options for each variation
     const variationsWithOptions = await Promise.all(
       variations.map(async (variation) => {
         const options = await ProductVariationOption.find({
@@ -414,18 +448,18 @@ export const getProduct = async (req, res, next) => {
       })
     );
 
-    // Build final response
+    // Build clean final response
     const response = {
-      data: {
-        ...product,
-        variations: variationsWithOptions,
-      },
+      ...product,
+      category_id: product.category_id?._id || product.category_id,
+      category_name: product.category_id?.category_name || null,
+      variations: variationsWithOptions,
     };
 
     res.status(200).json({
       success: true,
       message: "Product fetched successfully",
-      ...response,
+      data: response,
     });
   } catch (err) {
     console.error("Error fetching product details:", err);
