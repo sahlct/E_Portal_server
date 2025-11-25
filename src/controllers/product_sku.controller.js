@@ -361,19 +361,16 @@ export const updateProductSkuWithVariation = async (req, res, next) => {
       status,
     } = req.body;
 
-    // -----------------------------------------------------
-    // 🔍 Step 1: Collect variation_option_ids
-    // -----------------------------------------------------
+    /*-----------------------------------------
+      STEP 1: Read Variation Option IDs
+    -----------------------------------------*/
     let variationOptionIds = [];
 
     for (const key of Object.keys(req.body)) {
-      const match = key.match(
-        /^sku_variation_conf\[\d+\]\[variation_option_id\]$/
-      );
+      const match = key.match(/^sku_variation_conf\[\d+\]\[variation_option_id\]$/);
       if (match) {
         const val = req.body[key];
-        if (val && typeof val === "string" && val.trim())
-          variationOptionIds.push(val.trim());
+        if (val?.trim()) variationOptionIds.push(val.trim());
       }
     }
 
@@ -388,19 +385,15 @@ export const updateProductSkuWithVariation = async (req, res, next) => {
           variationOptionIds.push(
             ...req.body.sku_variation_conf.split(",").map((v) => v.trim())
           );
-        } else if (req.body.sku_variation_conf.trim()) {
-          variationOptionIds.push(req.body.sku_variation_conf.trim());
-        }
+        } else variationOptionIds.push(req.body.sku_variation_conf.trim());
       }
     }
 
-    variationOptionIds = [
-      ...new Set(variationOptionIds.filter((v) => v && v.length > 10)),
-    ];
+    variationOptionIds = [...new Set(variationOptionIds.filter((v) => v.length > 10))];
 
-    // -----------------------------------------------------
-    // 🔍 Step 2: Basic Validation
-    // -----------------------------------------------------
+    /*-----------------------------------------
+      VALIDATIONS
+    -----------------------------------------*/
     if (!product_id || !sku || !product_sku_name) {
       return res.status(400).json({
         message: "product_id, sku, and product_sku_name are required",
@@ -416,49 +409,31 @@ export const updateProductSkuWithVariation = async (req, res, next) => {
       return res.status(400).json({ message: "Product not found" });
     }
 
-    // -----------------------------------------------------
-    // 🔍 Step 3: Check whether product has variations
-    // -----------------------------------------------------
     const productHasVariations = await ProductVariation.countDocuments({
       product_id,
     }).session(session);
 
-    // ============================================================
-    // 🔥 CASE 1: Product HAS variations → variation options REQUIRED
-    // ============================================================
-    if (productHasVariations > 0) {
-      if (variationOptionIds.length === 0) {
-        return res.status(400).json({
-          message: "At least one variation_option_id is required",
-        });
-      }
+    if (productHasVariations > 0 && variationOptionIds.length === 0) {
+      return res.status(400).json({
+        message: "At least one variation_option_id is required",
+      });
     }
 
-    // ============================================================
-    // 🔥 CASE 2: Product has NO variations → only ONE SKU allowed
-    // ============================================================
     if (productHasVariations === 0) {
-      // STOP updating SKU to a different product if that product has no variations
       if (String(existingSku.product_id) !== String(product_id)) {
-        const skuCount = await ProductSku.countDocuments({ product_id }).session(
-          session
-        );
-
+        const skuCount = await ProductSku.countDocuments({ product_id }).session(session);
         if (skuCount >= 1) {
           return res.status(400).json({
-            message:
-              "This product does not have variations and can only have one SKU",
+            message: "This product does not have variations and can only have one SKU",
           });
         }
       }
-
-      // No need variation options for this case
       variationOptionIds = [];
     }
 
-    // -----------------------------------------------------
-    // 🔍 Step 4: Validate variation options (if provided)
-    // -----------------------------------------------------
+    /*-----------------------------------------
+      STEP 4: Validate Variation Options
+    -----------------------------------------*/
     let variationConfigs = [];
 
     if (variationOptionIds.length > 0) {
@@ -476,12 +451,9 @@ export const updateProductSkuWithVariation = async (req, res, next) => {
           if (
             !option.product_variation_id ||
             !option.product_variation_id.product_id ||
-            String(option.product_variation_id.product_id._id) !==
-              String(product_id)
+            String(option.product_variation_id.product_id._id) !== String(product_id)
           ) {
-            throw new Error(
-              `Variation option ${id} does not belong to product ${product_id}`
-            );
+            throw new Error(`Variation option ${id} does not belong to product ${product_id}`);
           }
 
           return {
@@ -492,26 +464,22 @@ export const updateProductSkuWithVariation = async (req, res, next) => {
         })
       );
 
-      // Prevent selecting more than one option from same variation type
-      const variationIds = variationConfigs.map((v) =>
-        String(v.product_variation_id)
-      );
+      const variationIds = variationConfigs.map((v) => String(v.product_variation_id));
       const uniqueVariationIds = [...new Set(variationIds)];
 
       if (variationIds.length !== uniqueVariationIds.length) {
-        throw new Error(
-          "Each variation option must belong to a different variation type"
-        );
+        throw new Error("Each variation option must belong to a different variation type");
       }
     }
 
-    // -----------------------------------------------------
-    // 🔍 Step 5: Handle Images
-    // -----------------------------------------------------
+    /*-----------------------------------------
+      STEP 5: HANDLE IMAGES (MERGE LOGIC)
+    -----------------------------------------*/
+
     const thumbnailFile = req.files?.thumbnail_image?.[0];
     const newSkuImages = req.files?.sku_image || [];
 
-    // Update thumbnail_image
+    // 5A - Update thumbnail
     if (thumbnailFile) {
       if (existingSku.thumbnail_image) {
         deleteFile(existingSku.thumbnail_image);
@@ -519,26 +487,33 @@ export const updateProductSkuWithVariation = async (req, res, next) => {
       existingSku.thumbnail_image = buildFileUrl(thumbnailFile.filename, "sku");
     }
 
-    // Update sku_image (multiple)
-    if (newSkuImages.length > 0) {
-      if (existingSku.sku_image?.length) {
-        existingSku.sku_image.forEach((img) => deleteFile(img));
-      }
+    // 5B - HANDLE EXISTING + NEW IMAGES MERGE
+    let finalImages = [];
 
-      existingSku.sku_image = newSkuImages.map((file) =>
+    // 5B-1: Keep existing images
+    if (Array.isArray(req.body.existing_sku_image)) {
+      finalImages = [...req.body.existing_sku_image];
+    } else if (req.body.existing_sku_image) {
+      finalImages = [req.body.existing_sku_image];
+    }
+
+    // 5B-2: Add newly uploaded images
+    if (newSkuImages.length > 0) {
+      const newImageUrls = newSkuImages.map((file) =>
         buildFileUrl(file.filename, "sku")
       );
+      finalImages = [...finalImages, ...newImageUrls];
     }
 
-    if (!existingSku.sku_image || existingSku.sku_image.length === 0) {
-      return res
-        .status(400)
-        .json({ message: "At least one sku_image is required" });
+    if (finalImages.length === 0) {
+      return res.status(400).json({ message: "At least one sku_image is required" });
     }
 
-    // -----------------------------------------------------
-    // 🔍 Step 6: Update SKU fields
-    // -----------------------------------------------------
+    existingSku.sku_image = finalImages;
+
+    /*-----------------------------------------
+      UPDATE SKU FIELDS
+    -----------------------------------------*/
     Object.assign(existingSku, {
       product_id,
       sku,
@@ -555,9 +530,9 @@ export const updateProductSkuWithVariation = async (req, res, next) => {
 
     await existingSku.save({ session });
 
-    // -----------------------------------------------------
-    // 🔍 Step 7: Replace variation configurations
-    // -----------------------------------------------------
+    /*-----------------------------------------
+      UPDATE VARIATION CONFIG
+    -----------------------------------------*/
     await ProductVariationConfiguration.deleteMany({
       product_sku_id: existingSku._id,
     }).session(session);
@@ -597,9 +572,7 @@ export const updateProductSkuWithVariation = async (req, res, next) => {
     session.endSession();
 
     if (req.files) {
-      if (req.files.thumbnail_image?.[0])
-        deleteFile(req.files.thumbnail_image[0].path);
-
+      if (req.files.thumbnail_image?.[0]) deleteFile(req.files.thumbnail_image[0].path);
       if (req.files.sku_image?.length)
         req.files.sku_image.forEach((file) => deleteFile(file.path));
     }
