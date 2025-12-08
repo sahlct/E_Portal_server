@@ -10,8 +10,7 @@ import path from "path";
 
 const buildFileUrl = (filename, folder = "sku") => {
   if (!filename) return null;
-  const serverUrl = process.env.SERVER_URL || "";
-  return `${serverUrl.replace(/\/$/, "")}/uploads/${folder}/${filename}`;
+  return `/uploads/${folder}/${filename}`;
 };
 
 // sku create with variation
