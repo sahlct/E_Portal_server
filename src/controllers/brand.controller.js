@@ -3,8 +3,7 @@ import { deleteUploadedFile } from "../middlewares/upload.middleware.js";
 
 const buildFileUrl = (filename, folder = "brands") => {
   if (!filename) return null;
-  const serverUrl = process.env.SERVER_URL || "";
-  return `${serverUrl.replace(/\/$/, "")}/uploads/${folder}/${filename}`;
+  return `/uploads/${folder}/${filename}`;
 };
 
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

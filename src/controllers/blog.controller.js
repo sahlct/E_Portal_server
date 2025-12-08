@@ -5,8 +5,7 @@ const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const buildFileUrl = (filename, folder = "blogs") => {
   if (!filename) return null;
-  const serverUrl = process.env.SERVER_URL || "";
-  return `${serverUrl.replace(/\/$/, "")}/uploads/${folder}/${filename}`;
+  return `/uploads/${folder}/${filename}`;
 };
 
 /* --------------------- CREATE (form-data) --------------------- */

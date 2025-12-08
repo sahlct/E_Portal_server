@@ -6,8 +6,7 @@ import fs from "fs";
 /* Helper URL builder */
 const buildFileUrl = (filename, folder = "category") => {
   if (!filename) return null;
-  const serverUrl = process.env.SERVER_URL || "";
-  return `${serverUrl.replace(/\/$/, "")}/uploads/${folder}/${filename}`;
+  return `/uploads/${folder}/${filename}`;
 };
 
 /* Escape regex */
