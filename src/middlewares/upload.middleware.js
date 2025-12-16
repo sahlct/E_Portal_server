@@ -7,29 +7,30 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+/* ---------- ensure folder exists (SAFE) ---------- */
+const ensureDir = (dirPath) => {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+};
+
 /**
  * createUploadMiddleware(options)
- * options: {
- *  fieldName?: string,
- *  fields?: [ { name: string, maxCount?: number } ],
- *  folderName?: string,
- *  maxSize?: number,
- *  allowedMime?: string[],
- * }
  */
 export function createUploadMiddleware({
   fieldName = "file",
   fields = null,
   folderName = "uploads",
-  maxSize = 5 * 1024 * 1024, // 5 MB default
+  maxSize = 5 * 1024 * 1024,
   allowedMime = ["image/jpeg", "image/png", "image/webp", "image/gif"],
 } = {}) {
   const uploadsRoot = path.resolve(process.cwd(), "uploads");
   const destFolder = path.join(uploadsRoot, folderName);
-  fs.mkdirSync(destFolder, { recursive: true });
 
   const storage = multer.diskStorage({
     destination: function (req, file, cb) {
+      // ✅ CRITICAL FIX: always ensure folder exists at runtime
+      ensureDir(destFolder);
       cb(null, destFolder);
     },
     filename: function (req, file, cb) {
@@ -50,18 +51,16 @@ export function createUploadMiddleware({
     fileFilter,
   });
 
-  // ✅ If multiple fields provided, handle multi-field upload
+  // multi-field upload
   if (Array.isArray(fields) && fields.length > 0) {
     return upload.fields(fields);
   }
 
-  // ✅ Default to single upload
+  // single upload
   return upload.single(fieldName);
 }
 
-/**
- * Delete file helper
- */
+/* ---------- delete file helper (unchanged) ---------- */
 export function deleteUploadedFile(relativeFilePath) {
   if (!relativeFilePath) return;
   try {

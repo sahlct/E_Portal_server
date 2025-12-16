@@ -663,38 +663,43 @@ export const getAllProductSkus = async (req, res) => {
       status,
       product_id,
       category_id,
-      is_new, // ✅ Added this
+      brand_id, // ✅ NEW
+      is_new,
     } = req.query;
 
     const query = {};
 
-    // 🔹 Search by SKU name
+    /* ---------------- SEARCH ---------------- */
     if (search) {
-      query.$or = [{ product_sku_name: { $regex: search, $options: "i" } }];
+      query.$or = [
+        { product_sku_name: { $regex: search, $options: "i" } },
+      ];
     }
 
-    // 🔹 Filter by status
-    if (status !== undefined) query.status = Number(status);
+    /* ---------------- STATUS ---------------- */
+    if (status !== undefined) {
+      query.status = Number(status);
+    }
 
-    // 🔹 Filter by product ID (direct)
-    if (product_id) query.product_id = product_id;
+    /* ---------------- PRODUCT DIRECT ---------------- */
+    if (product_id) {
+      query.product_id = product_id;
+    }
 
-    // 🔹 Filter by is_new (true / false)
+    /* ---------------- IS_NEW ---------------- */
     if (is_new !== undefined) {
-      // Convert string to boolean properly
       if (is_new === "true" || is_new === true) query.is_new = true;
       else if (is_new === "false" || is_new === false) query.is_new = false;
     }
 
-    // 🔹 Filter by category ID (indirect — via Product)
-    if (category_id) {
-      const products = await Product.find({ category_id }).select("_id");
-      const productIds = products.map((p) => p._id);
+    /* ---------------- CATEGORY FILTER (via Product) ---------------- */
+    let filteredProductIds = null;
 
-      if (productIds.length > 0) {
-        query.product_id = { $in: productIds };
-      } else {
-        // No products found for that category
+    if (category_id) {
+      const productsByCategory = await Product.find({ category_id }).select("_id");
+      filteredProductIds = productsByCategory.map((p) => p._id);
+
+      if (filteredProductIds.length === 0) {
         return res.status(200).json({
           total: 0,
           page: Number(page),
@@ -704,13 +709,50 @@ export const getAllProductSkus = async (req, res) => {
       }
     }
 
-    // 🔹 Count total
+    /* ---------------- BRAND FILTER (via Product) ---------------- */
+    if (brand_id) {
+      const productBrandFilter = {};
+
+      // apply category constraint if already present
+      if (filteredProductIds) {
+        productBrandFilter._id = { $in: filteredProductIds };
+      }
+
+      productBrandFilter.brand_id = brand_id;
+
+      const productsByBrand = await Product.find(productBrandFilter).select("_id");
+      const brandProductIds = productsByBrand.map((p) => p._id);
+
+      if (brandProductIds.length === 0) {
+        return res.status(200).json({
+          total: 0,
+          page: Number(page),
+          limit: Number(limit),
+          data: [],
+        });
+      }
+
+      query.product_id = { $in: brandProductIds };
+    }
+    // If only category filter applied (no brand)
+    else if (filteredProductIds) {
+      query.product_id = { $in: filteredProductIds };
+    }
+
+    /* ---------------- COUNT ---------------- */
     const total = await ProductSku.countDocuments(query);
 
-    // 🔹 Fetch paginated SKUs
+    /* ---------------- FETCH ---------------- */
     const skus = await ProductSku.find(query)
-      .populate("product_id", "product_name category_id")
-      .skip((page - 1) * limit)
+      .populate({
+        path: "product_id",
+        select: "product_name category_id brand_id",
+        populate: {
+          path: "brand_id",
+          select: "brand_name",
+        },
+      })
+      .skip((page - 1) * Number(limit))
       .limit(Number(limit))
       .sort({ created_at: -1 });
 
@@ -737,9 +779,16 @@ export const getSingleProductSku = async (req, res) => {
       return res.status(400).json({ message: "Invalid SKU ID format" });
     }
 
-    // Step 1️⃣ — Get SKU base details
+    // Step 1️⃣ — Get SKU base details + product + brand
     const sku = await ProductSku.findById(skuId)
-      .populate("product_id", "product_name",)
+      .populate({
+        path: "product_id",
+        select: "product_name brand_id",
+        populate: {
+          path: "brand_id",
+          select: "brand_name",
+        },
+      })
       .lean();
 
     if (!sku) {
@@ -752,32 +801,45 @@ export const getSingleProductSku = async (req, res) => {
     })
       .populate({
         path: "product_variation_id",
-        select: "name", // Variation (e.g., Color, Size)
+        select: "name",
       })
       .populate({
         path: "product_variation_option_id",
-        select: "name", // Option (e.g., Silver, 16inch)
+        select: "name",
       })
       .lean();
 
-    // Step 3️⃣ — Format clean response
+    // Step 3️⃣ — Format variation configs
     const formattedConfigs = variationConfigs.map((conf) => ({
       variation: {
-        _id: conf.product_variation_id?._id,
+        _id: conf.product_variation_id?._id || null,
         name: conf.product_variation_id?.name || null,
       },
       option: {
-        _id: conf.product_variation_option_id?._id,
+        _id: conf.product_variation_option_id?._id || null,
         name: conf.product_variation_option_id?.name || null,
       },
     }));
 
-    // Step 4️⃣ — Combine and send
+    // Step 4️⃣ — Normalize brand fields
+    const brand = sku.product_id?.brand_id
+      ? {
+          brand_id: sku.product_id.brand_id._id,
+          brand_name: sku.product_id.brand_id.brand_name,
+        }
+      : {
+          brand_id: null,
+          brand_name: null,
+        };
+
+    // Step 5️⃣ — Send response
     res.status(200).json({
       success: true,
       message: "Product SKU fetched successfully",
       data: {
         ...sku,
+        brand_id: brand.brand_id,
+        brand_name: brand.brand_name,
         variation_configurations: formattedConfigs,
       },
     });

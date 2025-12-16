@@ -4,11 +4,20 @@ const productSchema = new mongoose.Schema(
   {
     product_name: { type: String, required: true, trim: true },
     product_image: { type: String, default: null },
+
     category_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ProductCategory",
       required: true,
     },
+
+    // NEW (nullable, no FK enforcement)
+    brand_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Brands",
+      default: null,
+    },
+
     status: { type: Number, enum: [0, 1], default: 1 },
   },
   { timestamps: { createdAt: "created_at", updatedAt: "updated_at" } }
