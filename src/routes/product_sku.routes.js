@@ -9,6 +9,7 @@ import {
   updateProductSkuWithVariation,
   updateMultipleSkuIsNew,
   getVariationsByProductId,
+  getSingleProductSkuBySlug,
 } from "../controllers/product_sku.controller.js";
 import verifyToken from "../middlewares/auth.middleware.js";
 import { createUploadMiddleware } from "../middlewares/upload.middleware.js";
@@ -35,6 +36,7 @@ router.get("/", getAllProductSkus);
 router.put("/singleEdit/is-new", verifyToken, updateMultipleSkuIsNew);
 router.get("/:id", getSingleProductSku);
 router.put("/:id", verifyToken, uploadProductImage, updateProductSku);
+router.get("/slug/:slug", getSingleProductSkuBySlug);
 
 router.post("/with-variation", verifyToken, uploadSkuFiles, createProductSkuWithVariation);
 router.put("/with-variation/:id", verifyToken, uploadSkuFiles, updateProductSkuWithVariation);

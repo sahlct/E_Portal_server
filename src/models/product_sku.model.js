@@ -6,13 +6,10 @@ const productSkuSchema = new mongoose.Schema(
     product_sku_name: { type: String, required: true },
     description: { type: String },
     thumbnail_image: { type: String },
-
-    // ✅ NEW: sku_image array of URLs
     sku_image: {
       type: [String],
       default: [],
     },
-
     mrp: { type: Number, required: true },
     price: { type: Number, required: true },
     quantity: { type: Number, required: true },

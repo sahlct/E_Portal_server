@@ -11,11 +11,19 @@ const productSchema = new mongoose.Schema(
       required: true,
     },
 
-    // NEW (nullable, no FK enforcement)
     brand_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Brands",
       default: null,
+    },
+    features: {
+      type: [
+        {
+          option: { type: String, trim: true },
+          value: { type: String, trim: true },
+        },
+      ],
+      default: [],
     },
 
     status: { type: Number, enum: [0, 1], default: 1 },

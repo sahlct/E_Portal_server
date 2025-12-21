@@ -44,7 +44,41 @@ export const createProductWithVariations = async (req, res, next) => {
       return res.status(400).json({ message: "Invalid category_id" });
     }
 
-    // ✅ BRAND VALIDATION (NULL ALLOWED)
+    // -----------------------------------------
+    // Parse FEATURES (optional)
+    // -----------------------------------------
+    let features = [];
+
+    if (req.body.features) {
+      try {
+        if (typeof req.body.features === "string") {
+          features = JSON.parse(req.body.features);
+        } else if (Array.isArray(req.body.features)) {
+          features = req.body.features;
+        }
+
+        if (!Array.isArray(features)) {
+          throw new Error("Features must be an array");
+        }
+
+        features = features.map((f) => {
+          if (!f.option || !f.value) {
+            throw new Error("Each feature must have option and value");
+          }
+          return {
+            option: String(f.option).trim(),
+            value: String(f.value).trim(),
+          };
+        });
+      } catch (err) {
+        return res.status(400).json({
+          message: "Invalid features format",
+          error: err.message,
+        });
+      }
+    }
+
+    //  BRAND VALIDATION (NULL ALLOWED)
     let finalBrandId = null;
     if (brand_id) {
       const brandExists = await Brand.findById(brand_id).session(session);
@@ -58,8 +92,7 @@ export const createProductWithVariations = async (req, res, next) => {
     if (status === undefined || status === "") status = 1;
     else {
       status = Number(status);
-      if (![0, 1].includes(status))
-        throw new Error("status must be 0 or 1");
+      if (![0, 1].includes(status)) throw new Error("status must be 0 or 1");
     }
 
     let fileUrl = null;
@@ -72,6 +105,7 @@ export const createProductWithVariations = async (req, res, next) => {
         {
           product_name: product_name.trim(),
           product_image: fileUrl,
+          features,
           category_id,
           brand_id: finalBrandId,
           status,
@@ -127,7 +161,6 @@ export const createProductWithVariations = async (req, res, next) => {
   }
 };
 
-
 // update with variation
 export const updateProductWithVariations = async (req, res, next) => {
   const session = await mongoose.startSession();
@@ -141,8 +174,7 @@ export const updateProductWithVariations = async (req, res, next) => {
       variations = JSON.parse(variations);
     }
 
-    const existingProduct =
-      await Product.findById(productId).session(session);
+    const existingProduct = await Product.findById(productId).session(session);
     if (!existingProduct) {
       if (req.file) deleteUploadedFile(req.file.path || req.file.filename);
       return res.status(404).json({ message: "Product not found" });
@@ -157,7 +189,45 @@ export const updateProductWithVariations = async (req, res, next) => {
       existingProduct.category_id = category_id;
     }
 
-    // ✅ BRAND UPDATE LOGIC
+    // -----------------------------------------
+    // Parse FEATURES (optional)
+    // -----------------------------------------
+    let features = [];
+
+    if (req.body.features) {
+      try {
+        if (typeof req.body.features === "string") {
+          features = JSON.parse(req.body.features);
+        } else if (Array.isArray(req.body.features)) {
+          features = req.body.features;
+        }
+
+        if (!Array.isArray(features)) {
+          throw new Error("Features must be an array");
+        }
+
+        features = features.map((f) => {
+          if (!f.option || !f.value) {
+            throw new Error("Each feature must have option and value");
+          }
+          return {
+            option: String(f.option).trim(),
+            value: String(f.value).trim(),
+          };
+        });
+      } catch (err) {
+        return res.status(400).json({
+          message: "Invalid features format",
+          error: err.message,
+        });
+      }
+    }
+
+    if (req.body.features !== undefined) {
+      existingProduct.features = features;
+    }
+
+    //  BRAND UPDATE LOGIC
     if (brand_id !== undefined) {
       if (!brand_id) {
         existingProduct.brand_id = null;
@@ -170,8 +240,7 @@ export const updateProductWithVariations = async (req, res, next) => {
 
     if (status !== undefined && status !== "") {
       status = Number(status);
-      if (![0, 1].includes(status))
-        throw new Error("status must be 0 or 1");
+      if (![0, 1].includes(status)) throw new Error("status must be 0 or 1");
       existingProduct.status = status;
     }
 
@@ -329,8 +398,7 @@ export const getProduct = async (req, res, next) => {
       .populate("brand_id", "brand_name")
       .lean();
 
-    if (!product)
-      return res.status(404).json({ message: "Product not found" });
+    if (!product) return res.status(404).json({ message: "Product not found" });
 
     const variations = await ProductVariation.find({
       product_id: product._id,
@@ -459,7 +527,9 @@ export const deleteProduct = async (req, res, next) => {
     }
 
     // Find variations of this product
-    const variations = await ProductVariation.find({ product_id: id }).select("_id");
+    const variations = await ProductVariation.find({ product_id: id }).select(
+      "_id"
+    );
 
     // Collect variation IDs
     const variationIds = variations.map((v) => v._id);
