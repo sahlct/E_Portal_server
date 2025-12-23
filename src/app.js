@@ -14,6 +14,7 @@ import carouselRoutes from "./routes/carousel.routes.js";
 // import brandRoutes from "./routes/brand.routes.js";
 import blogsRoutes from "./routes/blog.routes.js";
 import brandsRoutes from "./routes/brands.routes.js";
+import bannerRoutes from "./routes/banner.routes.js";
 
 const app = express();
 dotenv.config();
@@ -50,8 +51,9 @@ app.use("/api/products", productRoutes);
 app.use("/api/product-sku", skuRoutes);
 app.use("/api/carousel", carouselRoutes);
 // app.use("/api/brand", brandRoutes);
-app.use("/api/blogs", blogsRoutes)
-app.use("/api/brands", brandsRoutes)
+app.use("/api/blogs", blogsRoutes);
+app.use("/api/brands", brandsRoutes);
+app.use("/api/banners", bannerRoutes);
 
 
 // Error handler

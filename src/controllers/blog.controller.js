@@ -11,7 +11,7 @@ const buildFileUrl = (filename, folder = "blogs") => {
 /* --------------------- CREATE (form-data) --------------------- */
 export const createBlog = async (req, res, next) => {
   try {
-    const { blog_title, blog_sec_title, description, date, place } = req.body;
+    const { blog_title, blog_sec_title, description, date, place, sec_description } = req.body;
     let { status } = req.body;
 
     const blogThumbnail = req.files?.blog_thumbnail?.[0];
@@ -41,6 +41,7 @@ export const createBlog = async (req, res, next) => {
       blog_thumbnail: blogThumbUrl,
       blog_sec_title: blog_sec_title?.trim() || null,
       description: description?.trim() || null,
+      sec_description: sec_description?.trim() || null,
       date,
       place: place?.trim() || null,
       other_images: otherImagesUrls,
@@ -110,7 +111,7 @@ export const getBlog = async (req, res, next) => {
 export const updateBlog = async (req, res, next) => {
   try {
     const id = req.params.id;
-    const { blog_title, blog_sec_title, description, date, place } = req.body;
+    const { blog_title, blog_sec_title, description, date, place, sec_description } = req.body;
     let { status } = req.body;
 
     const blogThumbnail = req.files?.blog_thumbnail?.[0];
@@ -129,6 +130,8 @@ export const updateBlog = async (req, res, next) => {
       existing.blog_sec_title = blog_sec_title?.trim() || null;
     if (typeof description !== "undefined")
       existing.description = description?.trim() || null;
+    if (typeof sec_description !== "undefined")
+      existing.sec_description = sec_description?.trim() || null;
     if (typeof date !== "undefined") existing.date = date;
     if (typeof place !== "undefined") existing.place = place?.trim() || null;
 

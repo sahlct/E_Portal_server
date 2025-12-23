@@ -8,8 +8,9 @@ const blogSchema = new mongoose.Schema(
     description: { type: String, default: null, trim: true },
     date: { type: Date, required: true },
     place: { type: String, default: null, trim: true },
-    other_images: { type: [String], default: [] }, // JSON array for multiple image URLs
+    other_images: { type: [String], default: [] }, 
     status: { type: Number, enum: [0, 1], default: 1 },
+    sec_description: { type: String, default: null, trim: true },
   },
   { timestamps: { createdAt: "created_at", updatedAt: "updated_at" } }
 );
