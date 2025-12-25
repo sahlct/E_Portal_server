@@ -10,6 +10,39 @@ import mongoose from "mongoose";
 /* Helpers */
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+const parseCategoryIds = async (category_id, session) => {
+  let categoryIds = [];
+
+  // Parse input
+  if (typeof category_id === "string") {
+    try {
+      categoryIds = JSON.parse(category_id);
+    } catch {
+      categoryIds = [category_id];
+    }
+  } else if (Array.isArray(category_id)) {
+    categoryIds = category_id;
+  }
+
+  if (!Array.isArray(categoryIds) || categoryIds.length === 0) {
+    throw new Error("category_id must be a non-empty array");
+  }
+
+  // Validate each category ID
+  for (const id of categoryIds) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new Error(`Invalid category_id format: ${id}`);
+    }
+
+    const exists = await ProductCategory.findById(id).session(session);
+    if (!exists) {
+      throw new Error(`Category not found: ${id}`);
+    }
+  }
+
+  return categoryIds;
+};
+
 const buildFileUrl = (filename, folder = "product") => {
   if (!filename) return null;
   return `/uploads/${folder}/${filename}`;
@@ -32,21 +65,29 @@ export const createProductWithVariations = async (req, res, next) => {
       return res.status(400).json({ message: "product_name is required" });
     }
 
-    if (!category_id) {
+    // Parse & Validate CATEGORY IDS (MULTIPLE)
+    let categoryIds;
+
+    try {
+      categoryIds = await parseCategoryIds(category_id, session);
+    } catch (err) {
       if (req.file) deleteUploadedFile(req.file.path || req.file.filename);
-      return res.status(400).json({ message: "category_id is required" });
+      return res.status(400).json({ message: err.message });
     }
 
-    const categoryExists =
-      await ProductCategory.findById(category_id).session(session);
-    if (!categoryExists) {
-      if (req.file) deleteUploadedFile(req.file.path || req.file.filename);
-      return res.status(400).json({ message: "Invalid category_id" });
-    }
+    // if (!category_id) {
+    //   if (req.file) deleteUploadedFile(req.file.path || req.file.filename);
+    //   return res.status(400).json({ message: "category_id is required" });
+    // }
 
-    // -----------------------------------------
+    // const categoryExists =
+    //   await ProductCategory.findById(category_id).session(session);
+    // if (!categoryExists) {
+    //   if (req.file) deleteUploadedFile(req.file.path || req.file.filename);
+    //   return res.status(400).json({ message: "Invalid category_id" });
+    // }
+
     // Parse FEATURES (optional)
-    // -----------------------------------------
     let features = [];
 
     if (req.body.features) {
@@ -73,6 +114,30 @@ export const createProductWithVariations = async (req, res, next) => {
       } catch (err) {
         return res.status(400).json({
           message: "Invalid features format",
+          error: err.message,
+        });
+      }
+    }
+
+    // Parse ADVANTAGES (optional)
+    let advantages = [];
+
+    if (req.body.advantages) {
+      try {
+        if (typeof req.body.advantages === "string") {
+          advantages = JSON.parse(req.body.advantages);
+        } else if (Array.isArray(req.body.advantages)) {
+          advantages = req.body.advantages;
+        }
+
+        if (!Array.isArray(advantages)) {
+          throw new Error("Advantages must be an array");
+        }
+
+        advantages = advantages.map((a) => String(a).trim()).filter(Boolean);
+      } catch (err) {
+        return res.status(400).json({
+          message: "Invalid advantages format",
           error: err.message,
         });
       }
@@ -106,7 +171,8 @@ export const createProductWithVariations = async (req, res, next) => {
           product_name: product_name.trim(),
           product_image: fileUrl,
           features,
-          category_id,
+          advantages,
+          category_id: categoryIds,
           brand_id: finalBrandId,
           status,
         },
@@ -183,15 +249,17 @@ export const updateProductWithVariations = async (req, res, next) => {
     if (product_name !== undefined)
       existingProduct.product_name = product_name.trim();
 
+    // Update CATEGORY IDS (MULTIPLE)
     if (category_id !== undefined) {
-      const cat = await ProductCategory.findById(category_id).session(session);
-      if (!cat) throw new Error("Invalid category_id");
-      existingProduct.category_id = category_id;
+      try {
+        const categoryIds = await parseCategoryIds(category_id, session);
+        existingProduct.category_id = categoryIds;
+      } catch (err) {
+        throw new Error(err.message);
+      }
     }
 
-    // -----------------------------------------
     // Parse FEATURES (optional)
-    // -----------------------------------------
     let features = [];
 
     if (req.body.features) {
@@ -225,6 +293,34 @@ export const updateProductWithVariations = async (req, res, next) => {
 
     if (req.body.features !== undefined) {
       existingProduct.features = features;
+    }
+
+    // Parse ADVANTAGES (optional)
+    let advantages = [];
+
+    if (req.body.advantages) {
+      try {
+        if (typeof req.body.advantages === "string") {
+          advantages = JSON.parse(req.body.advantages);
+        } else if (Array.isArray(req.body.advantages)) {
+          advantages = req.body.advantages;
+        }
+
+        if (!Array.isArray(advantages)) {
+          throw new Error("Advantages must be an array");
+        }
+
+        advantages = advantages.map((a) => String(a).trim()).filter(Boolean);
+      } catch (err) {
+        return res.status(400).json({
+          message: "Invalid advantages format",
+          error: err.message,
+        });
+      }
+    }
+
+    if (req.body.advantages !== undefined) {
+      existingProduct.advantages = advantages;
     }
 
     //  BRAND UPDATE LOGIC
@@ -354,11 +450,21 @@ export const listProducts = async (req, res, next) => {
 
     const filter = {};
 
-    if (search)
-      filter.product_name = { $regex: escapeRegExp(search), $options: "i" };
+    if (search) {
+      filter.product_name = {
+        $regex: escapeRegExp(search),
+        $options: "i",
+      };
+    }
 
-    if (status !== undefined) filter.status = Number(status);
-    if (category_id) filter.category_id = category_id;
+    if (status !== undefined) {
+      filter.status = Number(status);
+    }
+
+    // ✅ FILTER BY CATEGORY (MULTIPLE SUPPORT)
+    if (category_id) {
+      filter.category_id = { $in: [category_id] };
+    }
 
     const skip = (page - 1) * limit;
 
@@ -373,12 +479,22 @@ export const listProducts = async (req, res, next) => {
         .lean(),
     ]);
 
-    const formatted = items.map((i) => ({
-      ...i,
-      category_name: i.category_id?.category_name || null,
-      category_id: i.category_id?._id || i.category_id,
-      brand_name: i.brand_id?.brand_name || null,
-      brand_id: i.brand_id?._id || null,
+    const formatted = items.map((p) => ({
+      ...p,
+
+      // ✅ MULTIPLE CATEGORIES FORMAT
+      categories: Array.isArray(p.category_id)
+        ? p.category_id.map((c) => ({
+            _id: c._id,
+            category_name: c.category_name,
+          }))
+        : [],
+
+      brand_id: p.brand_id?._id || null,
+      brand_name: p.brand_id?.brand_name || null,
+
+      // optional cleanup
+      category_id: undefined,
     }));
 
     res.json({
@@ -398,7 +514,9 @@ export const getProduct = async (req, res, next) => {
       .populate("brand_id", "brand_name")
       .lean();
 
-    if (!product) return res.status(404).json({ message: "Product not found" });
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
 
     const variations = await ProductVariation.find({
       product_id: product._id,
@@ -417,11 +535,22 @@ export const getProduct = async (req, res, next) => {
       success: true,
       data: {
         ...product,
-        category_id: product.category_id?._id || null,
-        category_name: product.category_id?.category_name || null,
+
+        // ✅ MULTIPLE CATEGORIES FORMAT
+        categories: Array.isArray(product.category_id)
+          ? product.category_id.map((c) => ({
+              _id: c._id,
+              category_name: c.category_name,
+            }))
+          : [],
+
         brand_id: product.brand_id?._id || null,
         brand_name: product.brand_id?.brand_name || null,
+
         variations: variationsWithOptions,
+
+        // optional cleanup
+        category_id: undefined,
       },
     });
   } catch (err) {

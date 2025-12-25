@@ -5,17 +5,20 @@ const productSchema = new mongoose.Schema(
     product_name: { type: String, required: true, trim: true },
     product_image: { type: String, default: null },
 
-    category_id: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "ProductCategory",
-      required: true,
-    },
+    // MULTIPLE CATEGORIES SUPPORT
+    category_id: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "ProductCategory",
+      },
+    ],
 
     brand_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Brands",
       default: null,
     },
+
     features: {
       type: [
         {
@@ -23,6 +26,11 @@ const productSchema = new mongoose.Schema(
           value: { type: String, trim: true },
         },
       ],
+      default: [],
+    },
+
+    advantages: {
+      type: [String],
       default: [],
     },
 
