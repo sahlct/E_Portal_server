@@ -3,6 +3,7 @@ import ProductCategory from "../models/productCategory.model.js";
 import ProductVariation from "../models/product_variation.model.js";
 import ProductVariationOption from "../models/product_variation_options.model.js";
 import ProductVariationConfiguration from "../models/product_varition_conf.model.js";
+import ProductSku from "../models/product_sku.model.js";
 import Brand from "../models/brands.model.js";
 import { deleteUploadedFile } from "../middlewares/upload.middleware.js";
 import mongoose from "mongoose";
@@ -364,6 +365,118 @@ export const updateProductWithVariations = async (req, res, next) => {
   }
 };
 
+// get similar products
+export const getSimilarProducts = async (req, res, next) => {
+  try {
+    const productId = req.params.id;
+    const limit = Math.min(Number(req.query.limit) || 10, 50);
+
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      return res.status(400).json({ message: "Invalid product id" });
+    }
+
+    const product = await Product.findById(productId).lean();
+
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    const result = [];
+    const addedIds = new Set();
+
+    const baseFilter = {
+      _id: { $ne: product._id },
+      status: 1,
+    };
+
+    // Helper
+    const fetchAndAdd = async (filter) => {
+      if (result.length >= limit) return;
+
+      const items = await Product.find({
+        ...baseFilter,
+        ...filter,
+        _id: { $nin: Array.from(addedIds) },
+      })
+        .limit(limit - result.length)
+        .populate("brand_id", "brand_name")
+        .populate("category_id", "category_name")
+        .lean();
+
+      for (const item of items) {
+        const id = String(item._id);
+        if (!addedIds.has(id)) {
+          addedIds.add(id);
+          result.push(item);
+        }
+      }
+    };
+
+    //  Same category + same brand
+    if (product.category_id?.length && product.brand_id) {
+      await fetchAndAdd({
+        category_id: { $in: product.category_id },
+        brand_id: product.brand_id,
+      });
+    }
+
+    //  Same category only
+    if (product.category_id?.length) {
+      await fetchAndAdd({
+        category_id: { $in: product.category_id },
+      });
+    }
+
+    //  Same brand only
+    if (product.brand_id) {
+      await fetchAndAdd({
+        brand_id: product.brand_id,
+      });
+    }
+
+    //  Fallback
+    await fetchAndAdd({});
+
+    //  FETCH ALL SKUs FOR THESE PRODUCTS
+    const productIds = result.map((p) => p._id);
+
+    const skus = await ProductSku.find({
+      product_id: { $in: productIds },
+      status: 1,
+    })
+      .select("_id product_id product_sku_name")
+      .lean();
+
+    // Group SKUs by product_id
+    const skuMap = {};
+    for (const sku of skus) {
+      const pid = String(sku.product_id);
+      if (!skuMap[pid]) skuMap[pid] = [];
+      skuMap[pid].push({
+        _id: sku._id,
+        product_sku_name: sku.product_sku_name,
+      });
+    }
+
+    // Attach SKUs to products
+    const finalResult = result.map((p) => ({
+      ...p,
+      skus: skuMap[String(p._id)] || [],
+    }));
+
+    res.json({
+      success: true,
+      meta: {
+        requested_limit: limit,
+        returned: finalResult.length,
+      },
+      data: finalResult,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // create
 export const createProduct = async (req, res, next) => {
   try {
@@ -514,6 +627,8 @@ export const getProduct = async (req, res, next) => {
       .populate("brand_id", "brand_name")
       .lean();
 
+    // console.log("product", product);
+
     if (!product) {
       return res.status(404).json({ message: "Product not found" });
     }
@@ -536,7 +651,7 @@ export const getProduct = async (req, res, next) => {
       data: {
         ...product,
 
-        // ✅ MULTIPLE CATEGORIES FORMAT
+        //  MULTIPLE CATEGORIES FORMAT
         categories: Array.isArray(product.category_id)
           ? product.category_id.map((c) => ({
               _id: c._id,

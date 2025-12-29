@@ -29,6 +29,12 @@ router.put(
   controller.updateProductWithVariations
 );
 
+// similar product
+router.get(
+  "/:id/similar",
+  controller.getSimilarProducts
+);
+
 
 // basic routes
 router.post("/", uploadProductImage, controller.createProduct);
