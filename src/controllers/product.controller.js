@@ -444,7 +444,7 @@ export const getSimilarProducts = async (req, res, next) => {
       product_id: { $in: productIds },
       status: 1,
     })
-      .select("_id product_id product_sku_name")
+      .select("_id product_id product_sku_name sku")
       .lean();
 
     // Group SKUs by product_id
@@ -452,9 +452,11 @@ export const getSimilarProducts = async (req, res, next) => {
     for (const sku of skus) {
       const pid = String(sku.product_id);
       if (!skuMap[pid]) skuMap[pid] = [];
+
       skuMap[pid].push({
         _id: sku._id,
         product_sku_name: sku.product_sku_name,
+        sku: sku.sku,
       });
     }
 
