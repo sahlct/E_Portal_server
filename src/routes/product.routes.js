@@ -15,6 +15,7 @@ const uploadProductImage = createUploadMiddleware({
 router.get("/", controller.listProducts);
 router.get("/:id", controller.getProduct);
 router.get("/get-variations/:id", getVariationsByProductId);
+router.get("/:id/similar", controller.getSimilarProducts);
 
 router.use(authMiddleware);
 
@@ -28,13 +29,6 @@ router.put(
   uploadProductImage,
   controller.updateProductWithVariations
 );
-
-// similar product
-router.get(
-  "/:id/similar",
-  controller.getSimilarProducts
-);
-
 
 // basic routes
 router.post("/", uploadProductImage, controller.createProduct);
