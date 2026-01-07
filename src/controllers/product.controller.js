@@ -376,103 +376,118 @@ export const getSimilarProducts = async (req, res, next) => {
     }
 
     const product = await Product.findById(productId).lean();
-
     if (!product) {
       return res.status(404).json({ message: "Product not found" });
     }
 
-    const result = [];
-    const addedIds = new Set();
+    const buildPipeline = (matchStage) => ([
+      { $match: matchStage },
 
-    const baseFilter = {
-      _id: { $ne: product._id },
-      status: 1,
-    };
-
-    // Helper
-    const fetchAndAdd = async (filter) => {
-      if (result.length >= limit) return;
-
-      const items = await Product.find({
-        ...baseFilter,
-        ...filter,
-        _id: { $nin: Array.from(addedIds) },
-      })
-        .limit(limit - result.length)
-        .populate("brand_id", "brand_name")
-        .populate("category_id", "category_name")
-        .lean();
-
-      for (const item of items) {
-        const id = String(item._id);
-        if (!addedIds.has(id)) {
-          addedIds.add(id);
-          result.push(item);
+      // 🔥 JOIN SKUs
+      {
+        $lookup: {
+          from: "productskus",
+          let: { pid: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$product_id", "$$pid"] },
+                    { $eq: ["$status", 1] }
+                  ]
+                }
+              }
+            },
+            {
+              $project: {
+                _id: 1,
+                product_sku_name: 1,
+                sku: 1
+              }
+            }
+          ],
+          as: "skus"
         }
-      }
-    };
+      },
 
-    //  Same category + same brand
+      // ✅ REMOVE PRODUCTS WITHOUT SKUS
+      { $match: { "skus.0": { $exists: true } } },
+
+      // populate brand
+      {
+        $lookup: {
+          from: "brands",
+          localField: "brand_id",
+          foreignField: "_id",
+          as: "brand_id"
+        }
+      },
+      { $unwind: { path: "$brand_id", preserveNullAndEmptyArrays: true } },
+
+      // populate category
+      {
+        $lookup: {
+          from: "categories",
+          localField: "category_id",
+          foreignField: "_id",
+          as: "category_id"
+        }
+      },
+
+      { $limit: limit }
+    ]);
+
+    let data = [];
+
+    // 1️⃣ Same category + brand
     if (product.category_id?.length && product.brand_id) {
-      await fetchAndAdd({
-        category_id: { $in: product.category_id },
+      data = await Product.aggregate(buildPipeline({
+        _id: { $ne: product._id },
+        status: 1,
         brand_id: product.brand_id,
-      });
+        category_id: { $in: product.category_id }
+      }));
     }
 
-    //  Same category only
-    if (product.category_id?.length) {
-      await fetchAndAdd({
-        category_id: { $in: product.category_id },
-      });
+    // 2️⃣ Same category
+    if (data.length < limit && product.category_id?.length) {
+      const more = await Product.aggregate(buildPipeline({
+        _id: { $ne: product._id, $nin: data.map(d => d._id) },
+        status: 1,
+        category_id: { $in: product.category_id }
+      }));
+      data.push(...more);
     }
 
-    //  Same brand only
-    if (product.brand_id) {
-      await fetchAndAdd({
-        brand_id: product.brand_id,
-      });
+    // 3️⃣ Same brand
+    if (data.length < limit && product.brand_id) {
+      const more = await Product.aggregate(buildPipeline({
+        _id: { $ne: product._id, $nin: data.map(d => d._id) },
+        status: 1,
+        brand_id: product.brand_id
+      }));
+      data.push(...more);
     }
 
-    //  Fallback
-    await fetchAndAdd({});
-
-    //  FETCH ALL SKUs FOR THESE PRODUCTS
-    const productIds = result.map((p) => p._id);
-
-    const skus = await ProductSku.find({
-      product_id: { $in: productIds },
-      status: 1,
-    })
-      .select("_id product_id product_sku_name sku")
-      .lean();
-
-    // Group SKUs by product_id
-    const skuMap = {};
-    for (const sku of skus) {
-      const pid = String(sku.product_id);
-      if (!skuMap[pid]) skuMap[pid] = [];
-
-      skuMap[pid].push({
-        _id: sku._id,
-        product_sku_name: sku.product_sku_name,
-        sku: sku.sku,
-      });
+    // 4️⃣ Fallback
+    if (data.length < limit) {
+      const more = await Product.aggregate(buildPipeline({
+        _id: { $ne: product._id, $nin: data.map(d => d._id) },
+        status: 1
+      }));
+      data.push(...more);
     }
 
-    // Attach SKUs to products
-    const finalResult = result.map((p) => ({
-      ...p,
-      skus: skuMap[String(p._id)] || [],
-    }));
+    const finalData = data.slice(0, limit);
 
     res.json({
       success: true,
       meta: {
         requested_limit: limit,
-        returned: finalResult.length,
+        returned: finalData.length
       },
-      data: finalResult,
+      data: finalData
     });
   } catch (err) {
     next(err);

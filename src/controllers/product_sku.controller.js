@@ -42,7 +42,7 @@ export const getSingleProductSkuBySlug = async (req, res) => {
         select: "product_name brand_id",
         populate: {
           path: "brand_id",
-          select: "brand_name",
+          select: "brand_name brand_image",
         },
       })
       .lean();
@@ -113,9 +113,7 @@ export const createProductSkuWithVariation = async (req, res, next) => {
   session.startTransaction();
 
   try {
-    // -----------------------------------------
     // Ensure upload folder exists
-    // -----------------------------------------
     const uploadPath = path.join("uploads", "sku");
     if (!fs.existsSync(uploadPath)) {
       fs.mkdirSync(uploadPath, { recursive: true });
@@ -135,12 +133,17 @@ export const createProductSkuWithVariation = async (req, res, next) => {
       status,
     } = req.body;
 
-    // -----------------------------------------
     // Validate required fields
-    // -----------------------------------------
     if (!product_id || !sku || !product_sku_name) {
       return res.status(400).json({
         message: "product_id, sku, and product_sku_name are required",
+      });
+    }
+
+    if (!/^[A-Za-z0-9 ]+$/.test(sku)) {
+      return res.status(400).json({
+        message:
+          "SKU may contain only letters, numbers, and spaces. Special characters are not allowed.",
       });
     }
 
@@ -148,17 +151,13 @@ export const createProductSkuWithVariation = async (req, res, next) => {
       return res.status(400).json({ message: "Invalid product_id format" });
     }
 
-    // -----------------------------------------
     // Verify product exists
-    // -----------------------------------------
     const productExists = await Product.findById(product_id).session(session);
     if (!productExists) {
       return res.status(400).json({ message: "Product not found" });
     }
 
-    // -----------------------------------------
     // Check duplicate SKU for this product
-    // -----------------------------------------
     const existingSKU = await ProductSku.findOne({ product_id, sku }).session(
       session
     );
@@ -166,16 +165,12 @@ export const createProductSkuWithVariation = async (req, res, next) => {
       return res.status(400).json({ message: "SKU already exists" });
     }
 
-    // -----------------------------------------
     // Check whether product has variation definitions
-    // -----------------------------------------
     const productHasVariations = await ProductVariation.countDocuments({
       product_id,
     }).session(session);
 
-    // -----------------------------------------
     // Collect variation_option_ids from request
-    // -----------------------------------------
     let variationOptionIds = [];
 
     for (const key of Object.keys(req.body)) {
@@ -210,9 +205,7 @@ export const createProductSkuWithVariation = async (req, res, next) => {
       ...new Set(variationOptionIds.filter((v) => v && v.length > 10)),
     ];
 
-    // ============================================================
-    // 🔥 CASE 1: Product HAS variations → variation options REQUIRED
-    // ============================================================
+    // CASE 1: Product HAS variations → variation options REQUIRED
     if (productHasVariations > 0) {
       if (variationOptionIds.length === 0) {
         return res.status(400).json({
@@ -221,9 +214,7 @@ export const createProductSkuWithVariation = async (req, res, next) => {
       }
     }
 
-    // ============================================================
-    // 🔥 CASE 2: Product has NO variations → allow ONLY ONE SKU
-    // ============================================================
+    // CASE 2: Product has NO variations → allow ONLY ONE SKU
     if (productHasVariations === 0) {
       const skuCount = await ProductSku.countDocuments({ product_id }).session(
         session
@@ -237,14 +228,10 @@ export const createProductSkuWithVariation = async (req, res, next) => {
       }
     }
 
-    // -----------------------------------------
     // Collect variation configurations
-    // -----------------------------------------
     let variationConfigs = [];
 
-    // -----------------------------------------
     // Validate variation options if provided
-    // -----------------------------------------
     if (variationOptionIds.length > 0) {
       const validVariationIds = variationOptionIds.filter((id) =>
         mongoose.Types.ObjectId.isValid(id)
@@ -333,9 +320,7 @@ export const createProductSkuWithVariation = async (req, res, next) => {
       }
     }
 
-    // -----------------------------------------
     // Upload images
-    // -----------------------------------------
     const thumbnailFile = req.files?.thumbnail_image?.[0];
     const skuImages = req.files?.sku_image || [];
 
@@ -354,9 +339,7 @@ export const createProductSkuWithVariation = async (req, res, next) => {
       buildFileUrl(file.filename, "sku")
     );
 
-    // -----------------------------------------
     // Create SKU
-    // -----------------------------------------
     const skuDoc = await ProductSku.create(
       [
         {
@@ -381,9 +364,7 @@ export const createProductSkuWithVariation = async (req, res, next) => {
 
     const skuId = skuDoc[0]._id;
 
-    // -----------------------------------------
     // Save variation configurations (if provided)
-    // -----------------------------------------
     if (variationConfigs.length > 0) {
       await ProductVariationConfiguration.insertMany(
         variationConfigs.map((vc) => ({
@@ -459,9 +440,7 @@ export const updateProductSkuWithVariation = async (req, res, next) => {
       status,
     } = req.body;
 
-    /*-----------------------------------------
-      STEP 1: Read Variation Option IDs
-    -----------------------------------------*/
+    // STEP 1: Read Variation Option IDs
     let variationOptionIds = [];
 
     for (const key of Object.keys(req.body)) {
@@ -493,12 +472,17 @@ export const updateProductSkuWithVariation = async (req, res, next) => {
       ...new Set(variationOptionIds.filter((v) => v.length > 10)),
     ];
 
-    /*-----------------------------------------
-      VALIDATIONS
-    -----------------------------------------*/
+    // VALIDATIONS
     if (!product_id || !sku || !product_sku_name) {
       return res.status(400).json({
         message: "product_id, sku, and product_sku_name are required",
+      });
+    }
+
+    if (!/^[A-Za-z0-9 ]+$/.test(sku)) {
+      return res.status(400).json({
+        message:
+          "SKU may contain only letters, numbers, and spaces. Special characters are not allowed.",
       });
     }
 
@@ -536,9 +520,7 @@ export const updateProductSkuWithVariation = async (req, res, next) => {
       variationOptionIds = [];
     }
 
-    /*-----------------------------------------
-      STEP 4: Validate Variation Options
-    -----------------------------------------*/
+    // STEP 4: Validate Variation Options
     let variationConfigs = [];
 
     if (variationOptionIds.length > 0) {
@@ -584,9 +566,7 @@ export const updateProductSkuWithVariation = async (req, res, next) => {
       }
     }
 
-    /*-----------------------------------------
-      STEP 5: HANDLE IMAGES (MERGE LOGIC)
-    -----------------------------------------*/
+    // STEP 5: HANDLE IMAGES (MERGE LOGIC)
 
     const thumbnailFile = req.files?.thumbnail_image?.[0];
     const newSkuImages = req.files?.sku_image || [];
@@ -625,9 +605,7 @@ export const updateProductSkuWithVariation = async (req, res, next) => {
 
     existingSku.sku_image = finalImages;
 
-    /*-----------------------------------------
-      UPDATE SKU FIELDS
-    -----------------------------------------*/
+    // UPDATE SKU FIELDS
     Object.assign(existingSku, {
       product_id,
       sku,
@@ -644,9 +622,7 @@ export const updateProductSkuWithVariation = async (req, res, next) => {
 
     await existingSku.save({ session });
 
-    /*-----------------------------------------
-      UPDATE VARIATION CONFIG
-    -----------------------------------------*/
+    // UPDATE VARIATION CONFIG
     await ProductVariationConfiguration.deleteMany({
       product_sku_id: existingSku._id,
     }).session(session);
