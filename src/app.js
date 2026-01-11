@@ -15,6 +15,8 @@ import carouselRoutes from "./routes/carousel.routes.js";
 import blogsRoutes from "./routes/blog.routes.js";
 import brandsRoutes from "./routes/brands.routes.js";
 import bannerRoutes from "./routes/banner.routes.js";
+import subCategoryRoutes from "./routes/subCategory.routes.js";
+import innerCategoryRoutes from "./routes/innerCategory.routes.js";
 
 const app = express();
 dotenv.config();
@@ -54,6 +56,9 @@ app.use("/api/carousel", carouselRoutes);
 app.use("/api/blogs", blogsRoutes);
 app.use("/api/brands", brandsRoutes);
 app.use("/api/banners", bannerRoutes);
+app.use("/api/sub-category", subCategoryRoutes);
+app.use("/api/inner-category", innerCategoryRoutes);
+
 
 
 // Error handler

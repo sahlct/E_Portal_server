@@ -1,7 +1,5 @@
 import ProductCategory from "../models/productCategory.model.js";
 import { deleteUploadedFile } from "../middlewares/upload.middleware.js";
-import path from "path";
-import fs from "fs";
 
 /* Helper URL builder */
 const buildFileUrl = (filename, folder = "category") => {
@@ -12,9 +10,7 @@ const buildFileUrl = (filename, folder = "category") => {
 /* Escape regex */
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/*-------------------------------------
-  CREATE CATEGORY
--------------------------------------*/
+// CREATE CATEGORY
 export const createCategory = async (req, res, next) => {
   try {
     const { category_name } = req.body;
@@ -27,7 +23,10 @@ export const createCategory = async (req, res, next) => {
 
     // check duplicate
     const existing = await ProductCategory.findOne({
-      category_name: { $regex: `^${escapeRegExp(category_name)}$`, $options: "i" },
+      category_name: {
+        $regex: `^${escapeRegExp(category_name)}$`,
+        $options: "i",
+      },
     });
 
     if (existing) {
@@ -36,8 +35,7 @@ export const createCategory = async (req, res, next) => {
     }
 
     // validate status
-    if (status === undefined || status === null || status === "")
-      status = 1;
+    if (status === undefined || status === null || status === "") status = 1;
     else {
       status = Number(status);
       if (![0, 1].includes(status)) {
@@ -51,7 +49,9 @@ export const createCategory = async (req, res, next) => {
 
     // LIMIT: MAX 2 categories can be listing
     if (is_listing) {
-      const listingCount = await ProductCategory.countDocuments({ is_listing: true });
+      const listingCount = await ProductCategory.countDocuments({
+        is_listing: true,
+      });
       if (listingCount >= 2) {
         if (req.file) deleteUploadedFile(req.file.path);
         return res.status(400).json({
@@ -77,9 +77,7 @@ export const createCategory = async (req, res, next) => {
   }
 };
 
-/*-------------------------------------
-  LIST CATEGORIES
--------------------------------------*/
+// LIST CATEGORIES
 export const listCategories = async (req, res, next) => {
   try {
     const page = Math.max(Number(req.query.page) || 1, 1);
@@ -132,9 +130,7 @@ export const listCategories = async (req, res, next) => {
   }
 };
 
-/*-------------------------------------
-  SINGLE CATEGORY
--------------------------------------*/
+// SINGLE CATEGORY
 export const getCategory = async (req, res, next) => {
   try {
     const doc = await ProductCategory.findById(req.params.id).lean();
@@ -145,9 +141,7 @@ export const getCategory = async (req, res, next) => {
   }
 };
 
-/*-------------------------------------
-  UPDATE CATEGORY
--------------------------------------*/
+// UPDATE CATEGORY
 export const updateCategory = async (req, res, next) => {
   try {
     const id = req.params.id;
@@ -165,17 +159,24 @@ export const updateCategory = async (req, res, next) => {
     if (category_name !== undefined) {
       if (!category_name.trim()) {
         if (req.file) deleteUploadedFile(req.file.path);
-        return res.status(400).json({ message: "category_name cannot be empty" });
+        return res
+          .status(400)
+          .json({ message: "category_name cannot be empty" });
       }
 
       const duplicate = await ProductCategory.findOne({
         _id: { $ne: id },
-        category_name: { $regex: `^${escapeRegExp(category_name)}$`, $options: "i" },
+        category_name: {
+          $regex: `^${escapeRegExp(category_name)}$`,
+          $options: "i",
+        },
       });
 
       if (duplicate) {
         if (req.file) deleteUploadedFile(req.file.path);
-        return res.status(409).json({ message: "category_name already exists" });
+        return res
+          .status(409)
+          .json({ message: "category_name already exists" });
       }
 
       existingDoc.category_name = category_name.trim();
@@ -214,7 +215,8 @@ export const updateCategory = async (req, res, next) => {
 
     // IMAGE update
     if (req.file) {
-      if (existingDoc.category_image) deleteUploadedFile(existingDoc.category_image);
+      if (existingDoc.category_image)
+        deleteUploadedFile(existingDoc.category_image);
       existingDoc.category_image = buildFileUrl(req.file.filename, "category");
     }
 
@@ -226,9 +228,7 @@ export const updateCategory = async (req, res, next) => {
   }
 };
 
-/*-------------------------------------
-  DELETE CATEGORY
--------------------------------------*/
+// DELETE CATEGORY
 export const deleteCategory = async (req, res, next) => {
   try {
     const doc = await ProductCategory.findById(req.params.id);

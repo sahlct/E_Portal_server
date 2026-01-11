@@ -3,10 +3,13 @@ import ProductCategory from "../models/productCategory.model.js";
 import ProductVariation from "../models/product_variation.model.js";
 import ProductVariationOption from "../models/product_variation_options.model.js";
 import ProductVariationConfiguration from "../models/product_varition_conf.model.js";
+import ProductSubCategory from "../models/subCategory.model.js";
+import ProductInnerCategory from "../models/innerCategory.model.js";
 import ProductSku from "../models/product_sku.model.js";
 import Brand from "../models/brands.model.js";
 import { deleteUploadedFile } from "../middlewares/upload.middleware.js";
 import mongoose from "mongoose";
+import e from "express";
 
 /* Helpers */
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -54,7 +57,13 @@ export const createProductWithVariations = async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const { product_name, category_id, brand_id } = req.body;
+    const {
+      product_name,
+      category_id,
+      brand_id,
+      sub_category_id,
+      inner_category_id,
+    } = req.body;
     let { status, variations } = req.body;
 
     if (typeof variations === "string") {
@@ -66,29 +75,54 @@ export const createProductWithVariations = async (req, res, next) => {
       return res.status(400).json({ message: "product_name is required" });
     }
 
-    // Parse & Validate CATEGORY IDS (MULTIPLE)
-    let categoryIds;
-
-    try {
-      categoryIds = await parseCategoryIds(category_id, session);
-    } catch (err) {
-      if (req.file) deleteUploadedFile(req.file.path || req.file.filename);
-      return res.status(400).json({ message: err.message });
+    //  CATEGORY VALIDATION
+    if (!mongoose.Types.ObjectId.isValid(category_id)) {
+      return res.status(400).json({ message: "Invalid category_id" });
     }
 
-    // if (!category_id) {
-    //   if (req.file) deleteUploadedFile(req.file.path || req.file.filename);
-    //   return res.status(400).json({ message: "category_id is required" });
-    // }
+    const category =
+      await ProductCategory.findById(category_id).session(session);
+    if (!category) {
+      return res.status(400).json({ message: "Category not found" });
+    }
 
-    // const categoryExists =
-    //   await ProductCategory.findById(category_id).session(session);
-    // if (!categoryExists) {
-    //   if (req.file) deleteUploadedFile(req.file.path || req.file.filename);
-    //   return res.status(400).json({ message: "Invalid category_id" });
-    // }
+    // SUB CATEGORY VALIDATION
+    if (!mongoose.Types.ObjectId.isValid(sub_category_id)) {
+      return res.status(400).json({ message: "Invalid sub_category_id" });
+    }
 
-    // Parse FEATURES (optional)
+    const subCategory =
+      await ProductSubCategory.findById(sub_category_id).session(session);
+    if (!subCategory) {
+      return res.status(400).json({ message: "Sub category not found" });
+    }
+
+    // Ensure sub category belongs to same category
+    if (String(subCategory.category_id) !== String(category_id)) {
+      return res.status(400).json({
+        message: "Sub category does not belong to selected category",
+      });
+    }
+
+    //  INNER CATEGORY VALIDATION
+    if (!mongoose.Types.ObjectId.isValid(inner_category_id)) {
+      return res.status(400).json({ message: "Invalid inner_category_id" });
+    }
+
+    const innerCategory =
+      await ProductInnerCategory.findById(inner_category_id).session(session);
+
+    if (!innerCategory) {
+      return res.status(400).json({ message: "Inner category not found" });
+    }
+
+    // Ensure inner category belongs to same sub category
+    if (String(innerCategory.sub_category_id) !== String(sub_category_id)) {
+      return res.status(400).json({
+        message: "Inner category does not belong to selected sub category",
+      });
+    }
+
     let features = [];
 
     if (req.body.features) {
@@ -173,7 +207,9 @@ export const createProductWithVariations = async (req, res, next) => {
           product_image: fileUrl,
           features,
           advantages,
-          category_id: categoryIds,
+          category_id,
+          sub_category_id,
+          inner_category_id,
           brand_id: finalBrandId,
           status,
         },
@@ -233,7 +269,13 @@ export const updateProductWithVariations = async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const { product_name, category_id, brand_id } = req.body;
+    const {
+      product_name,
+      category_id,
+      brand_id,
+      sub_category_id,
+      inner_category_id,
+    } = req.body;
     let { status, variations } = req.body;
     const productId = req.params.id;
 
@@ -250,14 +292,74 @@ export const updateProductWithVariations = async (req, res, next) => {
     if (product_name !== undefined)
       existingProduct.product_name = product_name.trim();
 
-    // Update CATEGORY IDS (MULTIPLE)
+    // CATEGORY / SUB / INNER VALIDATION
+
+    // Resolve final IDs (new or existing)
+    const finalCategoryId = category_id ?? existingProduct.category_id;
+    const finalSubCategoryId =
+      sub_category_id ?? existingProduct.sub_category_id;
+    const finalInnerCategoryId =
+      inner_category_id ?? existingProduct.inner_category_id;
+
+    // CATEGORY
     if (category_id !== undefined) {
-      try {
-        const categoryIds = await parseCategoryIds(category_id, session);
-        existingProduct.category_id = categoryIds;
-      } catch (err) {
-        throw new Error(err.message);
+      if (!mongoose.Types.ObjectId.isValid(category_id)) {
+        return res.status(400).json({ message: "Invalid category_id" });
       }
+
+      const category =
+        await ProductCategory.findById(category_id).session(session);
+      if (!category) {
+        return res.status(400).json({ message: "Category not found" });
+      }
+
+      existingProduct.category_id = category_id;
+    }
+
+    // SUB CATEGORY
+    if (sub_category_id !== undefined) {
+      if (!mongoose.Types.ObjectId.isValid(sub_category_id)) {
+        return res.status(400).json({ message: "Invalid sub_category_id" });
+      }
+
+      const subCategory =
+        await ProductSubCategory.findById(sub_category_id).session(session);
+
+      if (!subCategory) {
+        return res.status(400).json({ message: "Sub category not found" });
+      }
+
+      if (String(subCategory.category_id) !== String(finalCategoryId)) {
+        return res.status(400).json({
+          message: "Sub category does not belong to selected category",
+        });
+      }
+
+      existingProduct.sub_category_id = sub_category_id;
+    }
+
+    // INNER CATEGORY
+    if (inner_category_id !== undefined) {
+      if (!mongoose.Types.ObjectId.isValid(inner_category_id)) {
+        return res.status(400).json({ message: "Invalid inner_category_id" });
+      }
+
+      const innerCategory =
+        await ProductInnerCategory.findById(inner_category_id).session(session);
+
+      if (!innerCategory) {
+        return res.status(400).json({ message: "Inner category not found" });
+      }
+
+      if (
+        String(innerCategory.sub_category_id) !== String(finalSubCategoryId)
+      ) {
+        return res.status(400).json({
+          message: "Inner category does not belong to selected sub category",
+        });
+      }
+
+      existingProduct.inner_category_id = inner_category_id;
     }
 
     // Parse FEATURES (optional)
@@ -380,7 +482,7 @@ export const getSimilarProducts = async (req, res, next) => {
       return res.status(404).json({ message: "Product not found" });
     }
 
-    const buildPipeline = (matchStage) => ([
+    const buildPipeline = (matchStage) => [
       { $match: matchStage },
 
       // 🔥 JOIN SKUs
@@ -394,21 +496,21 @@ export const getSimilarProducts = async (req, res, next) => {
                 $expr: {
                   $and: [
                     { $eq: ["$product_id", "$$pid"] },
-                    { $eq: ["$status", 1] }
-                  ]
-                }
-              }
+                    { $eq: ["$status", 1] },
+                  ],
+                },
+              },
             },
             {
               $project: {
                 _id: 1,
                 product_sku_name: 1,
-                sku: 1
-              }
-            }
+                sku: 1,
+              },
+            },
           ],
-          as: "skus"
-        }
+          as: "skus",
+        },
       },
 
       // ✅ REMOVE PRODUCTS WITHOUT SKUS
@@ -420,8 +522,8 @@ export const getSimilarProducts = async (req, res, next) => {
           from: "brands",
           localField: "brand_id",
           foreignField: "_id",
-          as: "brand_id"
-        }
+          as: "brand_id",
+        },
       },
       { $unwind: { path: "$brand_id", preserveNullAndEmptyArrays: true } },
 
@@ -431,51 +533,59 @@ export const getSimilarProducts = async (req, res, next) => {
           from: "categories",
           localField: "category_id",
           foreignField: "_id",
-          as: "category_id"
-        }
+          as: "category_id",
+        },
       },
 
-      { $limit: limit }
-    ]);
+      { $limit: limit },
+    ];
 
     let data = [];
 
     // 1️⃣ Same category + brand
     if (product.category_id?.length && product.brand_id) {
-      data = await Product.aggregate(buildPipeline({
-        _id: { $ne: product._id },
-        status: 1,
-        brand_id: product.brand_id,
-        category_id: { $in: product.category_id }
-      }));
+      data = await Product.aggregate(
+        buildPipeline({
+          _id: { $ne: product._id },
+          status: 1,
+          brand_id: product.brand_id,
+          category_id: { $in: product.category_id },
+        })
+      );
     }
 
     // 2️⃣ Same category
     if (data.length < limit && product.category_id?.length) {
-      const more = await Product.aggregate(buildPipeline({
-        _id: { $ne: product._id, $nin: data.map(d => d._id) },
-        status: 1,
-        category_id: { $in: product.category_id }
-      }));
+      const more = await Product.aggregate(
+        buildPipeline({
+          _id: { $ne: product._id, $nin: data.map((d) => d._id) },
+          status: 1,
+          category_id: { $in: product.category_id },
+        })
+      );
       data.push(...more);
     }
 
     // 3️⃣ Same brand
     if (data.length < limit && product.brand_id) {
-      const more = await Product.aggregate(buildPipeline({
-        _id: { $ne: product._id, $nin: data.map(d => d._id) },
-        status: 1,
-        brand_id: product.brand_id
-      }));
+      const more = await Product.aggregate(
+        buildPipeline({
+          _id: { $ne: product._id, $nin: data.map((d) => d._id) },
+          status: 1,
+          brand_id: product.brand_id,
+        })
+      );
       data.push(...more);
     }
 
     // 4️⃣ Fallback
     if (data.length < limit) {
-      const more = await Product.aggregate(buildPipeline({
-        _id: { $ne: product._id, $nin: data.map(d => d._id) },
-        status: 1
-      }));
+      const more = await Product.aggregate(
+        buildPipeline({
+          _id: { $ne: product._id, $nin: data.map((d) => d._id) },
+          status: 1,
+        })
+      );
       data.push(...more);
     }
 
@@ -485,9 +595,9 @@ export const getSimilarProducts = async (req, res, next) => {
       success: true,
       meta: {
         requested_limit: limit,
-        returned: finalData.length
+        returned: finalData.length,
       },
-      data: finalData
+      data: finalData,
     });
   } catch (err) {
     next(err);
@@ -574,9 +684,13 @@ export const listProducts = async (req, res, next) => {
   try {
     const page = Math.max(Number(req.query.page) || 1, 1);
     const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 100);
+    const skip = (page - 1) * limit;
+
     const search = req.query.search?.trim();
     const status = req.query.status;
     const category_id = req.query.category_id?.trim();
+    const sub_category_id = req.query.sub_category_id?.trim();
+    const inner_category_id = req.query.inner_category_id?.trim();
 
     const filter = {};
 
@@ -591,12 +705,26 @@ export const listProducts = async (req, res, next) => {
       filter.status = Number(status);
     }
 
-    // ✅ FILTER BY CATEGORY (MULTIPLE SUPPORT)
     if (category_id) {
-      filter.category_id = { $in: [category_id] };
+      if (!mongoose.Types.ObjectId.isValid(category_id)) {
+        return res.status(400).json({ message: "Invalid category_id" });
+      }
+      filter.category_id = category_id;
     }
 
-    const skip = (page - 1) * limit;
+    if (sub_category_id) {
+      if (!mongoose.Types.ObjectId.isValid(sub_category_id)) {
+        return res.status(400).json({ message: "Invalid sub_category_id" });
+      }
+      filter.sub_category_id = sub_category_id;
+    }
+
+    if (inner_category_id) {
+      if (!mongoose.Types.ObjectId.isValid(inner_category_id)) {
+        return res.status(400).json({ message: "Invalid inner_category_id" });
+      }
+      filter.inner_category_id = inner_category_id;
+    }
 
     const [total, items] = await Promise.all([
       Product.countDocuments(filter),
@@ -605,30 +733,45 @@ export const listProducts = async (req, res, next) => {
         .skip(skip)
         .limit(limit)
         .populate("category_id", "category_name")
+        .populate("sub_category_id", "sub_category_name")
+        .populate("inner_category_id", "inner_category_name")
         .populate("brand_id", "brand_name")
         .lean(),
     ]);
 
     const formatted = items.map((p) => ({
-      ...p,
+      _id: p._id,
+      product_name: p.product_name,
+      product_image: p.product_image,
 
-      // ✅ MULTIPLE CATEGORIES FORMAT
-      categories: Array.isArray(p.category_id)
-        ? p.category_id.map((c) => ({
-            _id: c._id,
-            category_name: c.category_name,
-          }))
-        : [],
+      /* CATEGORY */
+      category_id: p.category_id?._id || null,
+      category_name: p.category_id?.category_name || null,
 
+      /* SUB CATEGORY */
+      sub_category_id: p.sub_category_id?._id || null,
+      sub_category_name: p.sub_category_id?.sub_category_name || null,
+
+      /* INNER CATEGORY */
+      inner_category_id: p.inner_category_id?._id || null,
+      inner_category_name: p.inner_category_id?.inner_category_name || null,
+
+      /* BRAND */
       brand_id: p.brand_id?._id || null,
       brand_name: p.brand_id?.brand_name || null,
 
-      // optional cleanup
-      category_id: undefined,
+      status: p.status,
+      created_at: p.created_at,
+      updated_at: p.updated_at,
     }));
 
     res.json({
-      meta: { total, page, limit, pages: Math.ceil(total / limit) || 1 },
+      meta: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit) || 1,
+      },
       data: formatted,
     });
   } catch (err) {
@@ -641,15 +784,16 @@ export const getProduct = async (req, res, next) => {
   try {
     const product = await Product.findById(req.params.id)
       .populate("category_id", "category_name")
+      .populate("sub_category_id", "sub_category_name")
+      .populate("inner_category_id", "inner_category_name")
       .populate("brand_id", "brand_name")
       .lean();
-
-    // console.log("product", product);
 
     if (!product) {
       return res.status(404).json({ message: "Product not found" });
     }
 
+    // VARIATIONS
     const variations = await ProductVariation.find({
       product_id: product._id,
     }).lean();
@@ -666,23 +810,37 @@ export const getProduct = async (req, res, next) => {
     res.json({
       success: true,
       data: {
-        ...product,
+        _id: product._id,
+        product_name: product.product_name,
+        product_image: product.product_image,
 
-        //  MULTIPLE CATEGORIES FORMAT
-        categories: Array.isArray(product.category_id)
-          ? product.category_id.map((c) => ({
-              _id: c._id,
-              category_name: c.category_name,
-            }))
-          : [],
+        /* CATEGORY */
+        category_id: product.category_id?._id || null,
+        category_name: product.category_id?.category_name || null,
 
+        /* SUB CATEGORY */
+        sub_category_id: product.sub_category_id?._id || null,
+        sub_category_name: product.sub_category_id?.sub_category_name || null,
+
+        /* INNER CATEGORY */
+        inner_category_id: product.inner_category_id?._id || null,
+        inner_category_name:
+          product.inner_category_id?.inner_category_name || null,
+
+        /* BRAND */
         brand_id: product.brand_id?._id || null,
         brand_name: product.brand_id?.brand_name || null,
 
+        /* FEATURES */
+        features: product.features || [],
+        advantages: product.advantages || [],
+
+        /* VARIATIONS */
         variations: variationsWithOptions,
 
-        // optional cleanup
-        category_id: undefined,
+        status: product.status,
+        created_at: product.created_at,
+        updated_at: product.updated_at,
       },
     });
   } catch (err) {

@@ -2,23 +2,36 @@ import mongoose from "mongoose";
 
 const productSchema = new mongoose.Schema(
   {
-    product_name: { type: String, required: true, trim: true },
-    product_image: { type: String, default: null },
+    product_name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
 
-    // MULTIPLE CATEGORIES SUPPORT
-    category_id: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "ProductCategory",
-      },
-    ],
-
+    product_image: {
+      type: String,
+      default: null,
+    },
+    category_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ProductCategory",
+      required: true,
+    },
+    sub_category_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ProductSubCategory",
+      required: true,
+    },
+    inner_category_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "InnerCategory",
+      required: true,
+    },
     brand_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Brands",
       default: null,
     },
-
     features: {
       type: [
         {
@@ -28,16 +41,29 @@ const productSchema = new mongoose.Schema(
       ],
       default: [],
     },
-
     advantages: {
       type: [String],
       default: [],
     },
-
-    status: { type: Number, enum: [0, 1], default: 1 },
+    status: {
+      type: Number,
+      enum: [0, 1],
+      default: 1,
+    },
   },
-  { timestamps: { createdAt: "created_at", updatedAt: "updated_at" } }
+  {
+    timestamps: {
+      createdAt: "created_at",
+      updatedAt: "updated_at",
+    },
+  }
 );
+
+productSchema.index({
+  category_id: 1,
+  sub_category_id: 1,
+  inner_category_id: 1,
+});
 
 const Product = mongoose.model("Product", productSchema);
 export default Product;
