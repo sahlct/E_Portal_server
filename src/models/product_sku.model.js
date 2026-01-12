@@ -22,6 +22,9 @@ const productSkuSchema = new mongoose.Schema(
       required: true,
     },
     status: { type: Number, default: 1 },
+    meta_title: { type: String, default: null },
+    meta_description: { type: String, default: null },
+    meta_keywords: { type: String, default: null },
   },
   { timestamps: { createdAt: "created_at", updatedAt: "updated_at" } }
 );

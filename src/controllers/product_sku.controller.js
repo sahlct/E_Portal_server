@@ -131,6 +131,9 @@ export const createProductSkuWithVariation = async (req, res, next) => {
       single_order_limit,
       is_out_of_stock,
       status,
+      meta_title,
+      meta_description,
+      meta_keywords,
     } = req.body;
 
     // Validate required fields
@@ -357,6 +360,9 @@ export const createProductSkuWithVariation = async (req, res, next) => {
           is_out_of_stock:
             is_out_of_stock === "true" || is_out_of_stock === true,
           status: status ? Number(status) : 1,
+          meta_title,
+          meta_description,
+          meta_keywords,
         },
       ],
       { session }
@@ -438,6 +444,9 @@ export const updateProductSkuWithVariation = async (req, res, next) => {
       single_order_limit,
       is_out_of_stock,
       status,
+      meta_title,
+      meta_description,
+      meta_keywords,
     } = req.body;
 
     // STEP 1: Read Variation Option IDs
@@ -618,6 +627,9 @@ export const updateProductSkuWithVariation = async (req, res, next) => {
       single_order_limit,
       is_out_of_stock: is_out_of_stock === "true" || is_out_of_stock === true,
       status: status ? Number(status) : existingSku.status,
+      meta_title: meta_title || existingSku.meta_title,
+      meta_description: meta_description || existingSku.meta_description,
+      meta_keywords: meta_keywords || existingSku.meta_keywords,
     });
 
     await existingSku.save({ session });
