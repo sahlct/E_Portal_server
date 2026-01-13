@@ -5,10 +5,10 @@ import ProductSubCategory from "../models/subCategory.model.js";
 import { deleteUploadedFile } from "../middlewares/upload.middleware.js";
 
 // helper
-const buildFileUrl = (filename, folder = "inner-category") => {
-  if (!filename) return null;
-  return `/uploads/${folder}/${filename}`;
-};
+// const buildFileUrl = (filename, folder = "inner-category") => {
+//   if (!filename) return null;
+//   return `/uploads/${folder}/${filename}`;
+// };
 
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -71,13 +71,13 @@ export const createInnerCategory = async (req, res, next) => {
       return res.status(400).json({ message: "status must be 0 or 1" });
     }
 
-    const imageUrl = req.file
-      ? buildFileUrl(req.file.filename)
-      : null;
+    // const imageUrl = req.file
+    //   ? buildFileUrl(req.file.filename)
+    //   : null;
 
     const doc = await ProductInnerCategory.create({
       inner_category_name: inner_category_name.trim(),
-      inner_category_image: imageUrl,
+      // inner_category_image: imageUrl,
       category_id,
       sub_category_id,
       status,
@@ -85,7 +85,7 @@ export const createInnerCategory = async (req, res, next) => {
 
     res.status(201).json({ message: "Inner category created", data: doc });
   } catch (err) {
-    if (req.file) deleteUploadedFile(req.file.path);
+    // if (req.file) deleteUploadedFile(req.file.path);
     next(err);
   }
 };
@@ -279,16 +279,16 @@ export const updateInnerCategory = async (req, res, next) => {
       doc.status = status;
     }
 
-    if (req.file) {
-      if (doc.inner_category_image)
-        deleteUploadedFile(doc.inner_category_image);
-      doc.inner_category_image = buildFileUrl(req.file.filename);
-    }
+    // if (req.file) {
+    //   if (doc.inner_category_image)
+    //     deleteUploadedFile(doc.inner_category_image);
+    //   doc.inner_category_image = buildFileUrl(req.file.filename);
+    // }
 
     const updated = await doc.save();
     res.json({ message: "Inner category updated", data: updated });
   } catch (err) {
-    if (req.file) deleteUploadedFile(req.file.path);
+    // if (req.file) deleteUploadedFile(req.file.path);
     next(err);
   }
 };
@@ -300,8 +300,8 @@ export const deleteInnerCategory = async (req, res, next) => {
     if (!doc)
       return res.status(404).json({ message: "Inner category not found" });
 
-    if (doc.inner_category_image)
-      deleteUploadedFile(doc.inner_category_image);
+    // if (doc.inner_category_image)
+    //   deleteUploadedFile(doc.inner_category_image);
 
     await ProductInnerCategory.deleteOne({ _id: doc._id });
     res.json({ message: "Inner category deleted" });

@@ -17,11 +17,11 @@ export const createCarousel = async (req, res, next) => {
     let { status } = req.body;
 
     const desktopFile = req.files?.desktop_file?.[0];
-    // const mobileFile = req.files?.mobile_file?.[0];
+    const mobileFile = req.files?.mobile_file?.[0];
 
     // desktop_file required
     if (!desktopFile) {
-      // if (mobileFile) deleteUploadedFile(mobileFile.path || mobileFile.filename);
+      if (mobileFile) deleteUploadedFile(mobileFile.path || mobileFile.filename);
       return res.status(400).json({ message: "desktop_file is required" });
     }
 
@@ -31,14 +31,14 @@ export const createCarousel = async (req, res, next) => {
     else status = [0, 1].includes(Number(status)) ? Number(status) : 1;
 
     const desktopUrl = buildFileUrl(desktopFile.filename);
-    // const mobileUrl = mobileFile ? buildFileUrl(mobileFile.filename) : null;
+    const mobileUrl = mobileFile ? buildFileUrl(mobileFile.filename) : null;
 
     const doc = await Carousel.create({
       title: title?.trim() || null,
       sub_title: sub_title?.trim() || null,
       description: description?.trim() || null,
       desktop_file: desktopUrl,
-      mobile_file: null,
+      mobile_file: mobileUrl,
       status,
     });
 
@@ -105,12 +105,12 @@ export const updateCarousel = async (req, res, next) => {
     let { status } = req.body;
 
     const desktopFile = req.files?.desktop_file?.[0];
-    // const mobileFile = req.files?.mobile_file?.[0];
+    const mobileFile = req.files?.mobile_file?.[0];
 
     const existing = await Carousel.findById(id);
     if (!existing) {
       if (desktopFile) deleteUploadedFile(desktopFile.path || desktopFile.filename);
-      // if (mobileFile) deleteUploadedFile(mobileFile.path || mobileFile.filename);
+      if (mobileFile) deleteUploadedFile(mobileFile.path || mobileFile.filename);
       return res.status(404).json({ message: "Carousel not found" });
     }
 
@@ -129,10 +129,10 @@ export const updateCarousel = async (req, res, next) => {
       existing.desktop_file = buildFileUrl(desktopFile.filename);
     }
 
-    // if (mobileFile) {
-    //   if (existing.mobile_file) deleteUploadedFile(existing.mobile_file);
-    //   existing.mobile_file = buildFileUrl(mobileFile.filename);
-    // }
+    if (mobileFile) {
+      if (existing.mobile_file) deleteUploadedFile(existing.mobile_file);
+      existing.mobile_file = buildFileUrl(mobileFile.filename);
+    }
 
     const updated = await existing.save();
     res.json({ message: "Carousel updated", data: updated });

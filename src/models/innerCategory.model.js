@@ -7,10 +7,10 @@ const innerCategorySchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-    inner_category_image: {
-      type: String,
-      default: null,
-    },
+    // inner_category_image: {
+    //   type: String,
+    //   default: null,
+    // },
     category_id: {
       type: mongoose.Schema.Types.ObjectId,
       required: true,
