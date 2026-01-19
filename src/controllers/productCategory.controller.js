@@ -47,18 +47,18 @@ export const createCategory = async (req, res, next) => {
     // validate is_listing
     is_listing = is_listing === "true" || is_listing === true;
 
-    // LIMIT: MAX 2 categories can be listing
-    if (is_listing) {
-      const listingCount = await ProductCategory.countDocuments({
-        is_listing: true,
-      });
-      if (listingCount >= 2) {
-        if (req.file) deleteUploadedFile(req.file.path);
-        return res.status(400).json({
-          message: "Only 2 categories can be marked as listing",
-        });
-      }
-    }
+    // // LIMIT: MAX 2 categories can be listing
+    // if (is_listing) {
+    //   const listingCount = await ProductCategory.countDocuments({
+    //     is_listing: true,
+    //   });
+    //   if (listingCount >= 2) {
+    //     if (req.file) deleteUploadedFile(req.file.path);
+    //     return res.status(400).json({
+    //       message: "Only 2 categories can be marked as listing",
+    //     });
+    //   }
+    // }
 
     let fileUrl = null;
     if (req.file) fileUrl = buildFileUrl(req.file.filename, "category");
@@ -196,19 +196,19 @@ export const updateCategory = async (req, res, next) => {
     if (is_listing !== undefined) {
       const newListing = is_listing === "true" || is_listing === true;
 
-      if (newListing) {
-        const listingCount = await ProductCategory.countDocuments({
-          _id: { $ne: id },
-          is_listing: true,
-        });
+      // if (newListing) {
+      //   const listingCount = await ProductCategory.countDocuments({
+      //     _id: { $ne: id },
+      //     is_listing: true,
+      //   });
 
-        if (listingCount >= 2) {
-          if (req.file) deleteUploadedFile(req.file.path);
-          return res.status(400).json({
-            message: "Only 2 categories can be marked as listing",
-          });
-        }
-      }
+      //   if (listingCount >= 2) {
+      //     if (req.file) deleteUploadedFile(req.file.path);
+      //     return res.status(400).json({
+      //       message: "Only 2 categories can be marked as listing",
+      //     });
+      //   }
+      // }
 
       existingDoc.is_listing = newListing;
     }
