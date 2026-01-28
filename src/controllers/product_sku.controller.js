@@ -4,6 +4,8 @@ import Product from "../models/product.model.js";
 import ProductVariation from "../models/product_variation.model.js";
 import ProductVariationOption from "../models/product_variation_options.model.js";
 import ProductVariationConfiguration from "../models/product_varition_conf.model.js";
+import ProductSubCategory from "../models/subCategory.model.js";
+import InnerCategory from "../models/innerCategory.model.js";
 import deleteFile from "../utils/deleteFile.js";
 import fs from "fs";
 import path from "path";
@@ -765,7 +767,9 @@ export const getAllProductSkus = async (req, res) => {
       status,
       product_id,
       category_id,
-      brand_id, // ✅ NEW
+      sub_category_id,
+      inner_category_id,
+      brand_id, 
       is_new,
     } = req.query;
 
@@ -792,13 +796,90 @@ export const getAllProductSkus = async (req, res) => {
       else if (is_new === "false" || is_new === false) query.is_new = false;
     }
 
-    /* ---------------- CATEGORY FILTER (via Product) ---------------- */
+    /* ============= CATEGORY HIERARCHY VALIDATION & FILTERING ============= */
     let filteredProductIds = null;
 
-    if (category_id) {
-      const productsByCategory = await Product.find({ category_id }).select(
-        "_id"
+    // STEP 1️⃣: Validate category_id is valid ObjectId
+    if (category_id && !mongoose.Types.ObjectId.isValid(category_id)) {
+      return res.status(400).json({
+        message: "Invalid category_id format",
+      });
+    }
+
+    // STEP 2️⃣: Validate sub_category_id is valid ObjectId
+    if (sub_category_id && !mongoose.Types.ObjectId.isValid(sub_category_id)) {
+      return res.status(400).json({
+        message: "Invalid sub_category_id format",
+      });
+    }
+
+    // STEP 3️⃣: Validate inner_category_id is valid ObjectId
+    if (inner_category_id && !mongoose.Types.ObjectId.isValid(inner_category_id)) {
+      return res.status(400).json({
+        message: "Invalid inner_category_id format",
+      });
+    }
+
+    // STEP 4️⃣: Validate Sub Category belongs to Main Category
+    if (sub_category_id && category_id) {
+      const subCategoryExists = await ProductSubCategory.findOne({
+        _id: sub_category_id,
+        category_id: category_id,
+      });
+
+      if (!subCategoryExists) {
+        return res.status(400).json({
+          message: "Sub category does not belong to the specified category",
+        });
+      }
+    }
+
+    // STEP 5️⃣: Validate Inner Category belongs to Sub Category (and Main Category if provided)
+    if (inner_category_id) {
+      const innerCategoryFilter = { _id: inner_category_id };
+
+      if (sub_category_id) {
+        innerCategoryFilter.sub_category_id = sub_category_id;
+      }
+
+      if (category_id) {
+        innerCategoryFilter.category_id = category_id;
+      }
+
+      const innerCategoryExists = await InnerCategory.findOne(
+        innerCategoryFilter
       );
+
+      if (!innerCategoryExists) {
+        return res.status(400).json({
+          message:
+            "Inner category does not exist or does not belong to the specified category hierarchy",
+        });
+      }
+    }
+
+    /* ============= PRODUCT FILTERING BY CATEGORIES ============= */
+    
+    let productFilter = {};
+
+    // Apply category filter
+    if (category_id) {
+      productFilter.category_id = category_id;
+    }
+
+    // Apply sub category filter
+    if (sub_category_id) {
+      productFilter.sub_category_id = sub_category_id;
+    }
+
+    // Apply inner category filter
+    if (inner_category_id) {
+      productFilter.inner_category_id = inner_category_id;
+    }
+
+    // Get filtered product IDs from categories
+    if (Object.keys(productFilter).length > 0) {
+      const productsByCategory = await Product.find(productFilter).select("_id");
       filteredProductIds = productsByCategory.map((p) => p._id);
 
       if (filteredProductIds.length === 0) {
@@ -811,16 +892,14 @@ export const getAllProductSkus = async (req, res) => {
       }
     }
 
-    /* ---------------- BRAND FILTER (via Product) ---------------- */
+    /* ============= BRAND FILTER (via Product) ============= */
     if (brand_id) {
-      const productBrandFilter = {};
+      const productBrandFilter = { brand_id };
 
       // apply category constraint if already present
       if (filteredProductIds) {
         productBrandFilter._id = { $in: filteredProductIds };
       }
-
-      productBrandFilter.brand_id = brand_id;
 
       const productsByBrand =
         await Product.find(productBrandFilter).select("_id");
@@ -842,14 +921,13 @@ export const getAllProductSkus = async (req, res) => {
       query.product_id = { $in: filteredProductIds };
     }
 
-    /* ---------------- COUNT ---------------- */
+    /* ============= COUNT & FETCH ============= */
     const total = await ProductSku.countDocuments(query);
 
-    /* ---------------- FETCH ---------------- */
     const skus = await ProductSku.find(query)
       .populate({
         path: "product_id",
-        select: "product_name category_id brand_id",
+        select: "product_name category_id sub_category_id inner_category_id brand_id",
         populate: {
           path: "brand_id",
           select: "brand_name",
